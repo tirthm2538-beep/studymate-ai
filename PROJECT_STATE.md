@@ -21,3 +21,5 @@ StudyMate AI is an AI-powered study assistant that takes a student's own study n
 - **Status**: Step 1 complete: skeleton created and verified
   - Backend initialized with virtual environment, dependencies installed, and `/health` endpoint verified (`{"status": "ok"}`).
   - Frontend initialized with Next.js + TypeScript + Tailwind CSS and verified running on `http://localhost:3000`.
+  - Git repository initialized, committed, and pushed to [github.com/tirthm2538-beep/studymate-ai](https://github.com/tirthm2538-beep/studymate-ai).
+  - GitHub CLI (`gh`) installed and authenticated for user `tirthm2538-beep`.
