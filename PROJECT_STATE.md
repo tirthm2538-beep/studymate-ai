@@ -1,23 +1,30 @@
 # StudyMate AI — Project State
 
-## Project Goal
-StudyMate AI is an AI-powered study assistant that takes a student's own study notes (via PDF upload or pasted text) and leverages AI to generate interactive flashcards and quiz questions, enabling faster, more effective learning.
+## Project Status: COMPLETE ✅
+**One-line summary**: StudyMate AI is a full-stack, AI-powered study assistant that transforms raw lecture notes or uploaded PDFs into interactive flashcards and self-paced multiple-choice practice quizzes using Google Gemini.
+
+### 🌐 Live Production Deployments
+- **Live Frontend**: [https://studymate-ai-sepia-tau.vercel.app](https://studymate-ai-sepia-tau.vercel.app)
+- **Live Backend API**: [https://studymate-ai-licm.onrender.com](https://studymate-ai-licm.onrender.com)
+- **Interactive API Docs (Swagger)**: [https://studymate-ai-licm.onrender.com/docs](https://studymate-ai-licm.onrender.com/docs)
+- **GitHub Repository**: [https://github.com/tirthm2538-beep/studymate-ai](https://github.com/tirthm2538-beep/studymate-ai)
+
+---
 
 ## Tech Stack
 - **Backend**:
   - Python 3.12
-  - FastAPI
-  - Uvicorn
+  - FastAPI + Uvicorn
   - Google Generative AI SDK (`google-generativeai` with `gemini-3.5-flash-lite`, REST transport)
   - `python-dotenv`, `python-multipart`
   - `pypdf` (PDF text extraction)
-  - Deployment: Render (Web Service)
+  - Hosted on **Render** (Free Tier Web Service)
 - **Frontend**:
   - Next.js 16 (App Router)
   - React 19
   - TypeScript
   - Tailwind CSS
-  - Deployment: Vercel
+  - Hosted on **Vercel** (Free Tier)
 
 ---
 
@@ -56,11 +63,13 @@ StudyMate AI is an AI-powered study assistant that takes a student's own study n
   - **Documentation**: Comprehensive root `README.md` authored with badges, architecture overview, local setup, and Render + Vercel deployment walkthrough.
   - **Render Configuration**: Added `render.yaml` blueprint with Python 3.12 runtime and environment variable sync.
 
-### Step 4: Live Deployment (In Progress)
-- **Status**: Ready for Live Deployment on Render & Vercel
-- **GitHub Repository**: [https://github.com/tirthm2538-beep/studymate-ai](https://github.com/tirthm2538-beep/studymate-ai)
-- **Live Backend URL**: Pending Render deployment
-- **Live Frontend URL**: Pending Vercel deployment
+### Step 4: Live Deployment & Verification
+- **Date**: 2026-11-19
+- **Status**: Complete & Verified Live End-to-End
+  - **Backend Live on Render**: [https://studymate-ai-licm.onrender.com](https://studymate-ai-licm.onrender.com) (`/health` returned `{"status": "ok"}`).
+  - **Frontend Live on Vercel**: [https://studymate-ai-sepia-tau.vercel.app](https://studymate-ai-sepia-tau.vercel.app) (HTTP 200 OK).
+  - Production environment variable `NEXT_PUBLIC_API_URL` connected to live Render backend.
+  - Full study notes analysis, flashcards generation, and quiz completion confirmed functional in production.
 
 ---
 

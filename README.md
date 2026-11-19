@@ -7,6 +7,9 @@
 [![Tailwind CSS](https://img.shields.io/badge/Styling-Tailwind%20CSS-38B2AC?style=flat&logo=tailwind-css)](https://tailwindcss.com/)
 [![Google Gemini](https://img.shields.io/badge/AI-Google%20Gemini-4285F4?style=flat&logo=google)](https://ai.google.dev/)
 
+🚀 **Live Demo**: [https://studymate-ai-sepia-tau.vercel.app](https://studymate-ai-sepia-tau.vercel.app)  
+📡 **Live Backend API**: [https://studymate-ai-licm.onrender.com](https://studymate-ai-licm.onrender.com) (Docs: [/docs](https://studymate-ai-licm.onrender.com/docs))
+
 ---
 
 ## 📖 Overview
