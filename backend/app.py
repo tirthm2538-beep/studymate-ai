@@ -31,18 +31,27 @@ DEFAULT_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-3.5-flash-lite")
 
 STUDY_PROMPT_TEMPLATE = """You are an expert educational study assistant. Analyze the student's study notes below and generate structured study materials.
 
+Target Difficulty Level: {difficulty}
+Difficulty Calibration Guidelines:
+- Easy: Focus on fundamental definitions, core terminology, straightforward identification, and direct recall. Keep questions accessible and intuitive.
+- Medium: Focus on standard conceptual understanding, cause-and-effect relationships, key mechanisms, and moderate application. Balance recall with comprehension.
+- Hard: Focus on advanced analytical thinking, edge cases, multi-step problem solving, deep conceptual nuances, and rigorous application of formulas.
+
 Mathematical formatting instructions:
 - Express mathematical equations, formulas, exponents, fractions, and special symbols in clean, readable notation.
 - Use simple, clean notation (e.g., x^2, sqrt(x), dy/dx, (a + b)/c) or standard LaTeX enclosed in single dollar signs for inline math (e.g., $x^2 + y^2 = r^2$, $\\frac{{dy}}{{dx}} = 2x$) or double dollar signs for display equations (e.g., $$\\int_0^1 x^2 dx = \\frac{{1}}{{3}}$$).
 - Never output broken unicode characters, corrupt glyphs, or unescaped messy notation.
 
 You must generate:
-1. flashcards: Exactly 8 to 10 high-yield flashcard pairs covering key concepts, definitions, formulas, or facts.
+1. important_topics: An array of exactly 3 to 5 most important core topics, high-yield themes, or key principles identified from the notes.
+   Each topic item should be a concise, informative string explaining the key takeaway or why it is critical.
+
+2. flashcards: Exactly 8 to 10 high-yield flashcard pairs covering key concepts, definitions, formulas, or facts calibrated to the {difficulty} level.
    Each flashcard object MUST contain:
    - "front": A clear, concise question, concept, or term.
    - "back": The concise explanation, definition, or answer.
 
-2. quiz: Exactly 5 multiple-choice questions testing comprehension and application of the material.
+3. quiz: Exactly 5 multiple-choice questions testing comprehension and application of the material at the {difficulty} level.
    Each quiz question object MUST contain:
    - "question": The question text.
    - "options": An array of exactly 4 choices (strings).
@@ -51,6 +60,11 @@ You must generate:
 
 JSON output structure:
 {{
+  "important_topics": [
+    "Topic 1: ...",
+    "Topic 2: ...",
+    "Topic 3: ..."
+  ],
   "flashcards": [
     {{"front": "...", "back": "..."}}
   ],
@@ -181,13 +195,14 @@ def health():
 async def generate(
     request: Request,
     text: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None)
+    file: Optional[UploadFile] = File(None),
+    difficulty: Optional[str] = Form("Medium")
 ):
     """
     Generate flashcards and quiz questions from provided student notes.
     Accepts:
-    - multipart/form-data with 'text' (pasted string) or 'file' (.pdf or .txt)
-    - application/json with {"text": "..."}
+    - multipart/form-data with 'text', 'file', 'difficulty'
+    - application/json with {"text": "...", "difficulty": "..."}
     """
     content_type = request.headers.get("content-type", "")
     notes_text = ""
@@ -198,6 +213,8 @@ async def generate(
             body = await request.json()
             if isinstance(body, dict):
                 notes_text = body.get("text", "") or ""
+                if "difficulty" in body:
+                    difficulty = body.get("difficulty")
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,13 +257,25 @@ async def generate(
             detail="Notes content is empty. Please provide text or upload a valid PDF/TXT file."
         )
 
+    # Normalize and validate difficulty level
+    valid_difficulties = {"Easy", "Medium", "Hard"}
+    selected_difficulty = "Medium"
+    if difficulty:
+        cap = str(difficulty).strip().capitalize()
+        if cap in valid_difficulties:
+            selected_difficulty = cap
+
     # Initialize Gemini model
     model = get_gemini_client()
 
     # Intelligently condense long notes if document is large (e.g. 20+ pages)
     effective_notes = condense_long_notes(notes_text)
 
-    prompt = STUDY_PROMPT_TEMPLATE.replace("{notes}", effective_notes.strip())
+    prompt = (
+        STUDY_PROMPT_TEMPLATE
+        .replace("{difficulty}", selected_difficulty)
+        .replace("{notes}", effective_notes.strip())
+    )
 
     try:
         response = model.generate_content(prompt, request_options={"timeout": 60})
@@ -292,6 +321,9 @@ async def generate(
     # Validate output schema
     flashcards = data.get("flashcards")
     quiz = data.get("quiz")
+    important_topics = data.get("important_topics", [])
+    if not isinstance(important_topics, list):
+        important_topics = []
 
     if not isinstance(flashcards, list) or not isinstance(quiz, list):
         raise HTTPException(
@@ -302,6 +334,8 @@ async def generate(
     return {
         "status": "success",
         "notes_length": len(notes_text),
+        "difficulty": selected_difficulty,
+        "important_topics": important_topics,
         "flashcards": flashcards,
         "quiz": quiz
     }

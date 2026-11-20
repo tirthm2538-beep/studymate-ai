@@ -99,6 +99,14 @@
   - Zero backend/server storage footprint: 100% private and client-side with no account or privacy tradeoffs.
   - Verified storage, reopening, single-item deletion, and clear-all operations.
 
+### Step 8: Difficulty Level Selector & Most Important Topics
+- **Date**: 2026-11-20
+- **Status**: Complete & Tested
+  - Added Difficulty Level Selector (Easy / Medium / Hard) 3-way toggle button group before generation.
+  - Calibrated Gemini generation prompt to dynamically adapt question complexity and recall depth according to selected difficulty.
+  - Extracted 3 to 5 "Most Important Topics" from study material, displayed as a highlighted executive summary card directly alongside flashcards with KaTeX math rendering and difficulty badge.
+  - Verified across Easy and Hard test sets with verified topic extraction and calibrated question nuances.
+
 ---
 
 #### Endpoint Reference: `POST /generate`
@@ -106,11 +114,18 @@
 - **Input Parameters**:
   - `text` (string, optional): Pasted study notes.
   - `file` (binary, optional): Uploaded `.pdf` or `.txt` file (max 25MB).
+  - `difficulty` (string, optional): "Easy", "Medium", or "Hard" (default: "Medium").
 - **Response Format (`application/json`)**:
   ```json
   {
     "status": "success",
     "notes_length": 1273,
+    "difficulty": "Medium",
+    "important_topics": [
+      "Topic 1: Core principle...",
+      "Topic 2: Key formula...",
+      "Topic 3: Primary mechanism..."
+    ],
     "flashcards": [
       {
         "front": "Question or concept",
@@ -120,7 +135,6 @@
     "quiz": [
       {
         "question": "Question text?",
- 
         "options": ["Option A", "Option B", "Option C", "Option D"],
         "correct_answer_index": 1,
         "explanation": "Why Option B is the correct answer."

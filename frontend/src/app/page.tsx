@@ -18,6 +18,8 @@ interface QuizQuestion {
 interface GenerateResponse {
   status: string;
   notes_length: number;
+  difficulty?: string;
+  important_topics?: string[];
   flashcards: Flashcard[];
   quiz: QuizQuestion[];
 }
@@ -53,6 +55,9 @@ export default function StudyMateApp() {
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<"flashcards" | "quiz">("flashcards");
+
+  // Difficulty level toggle state
+  const [difficulty, setDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
 
   // Flashcards state
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
@@ -181,6 +186,7 @@ export default function StudyMateApp() {
       if (selectedFile) {
         formData.append("file", selectedFile);
       }
+      formData.append("difficulty", difficulty);
 
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
       const cleanBaseUrl = apiBaseUrl.replace(/\/+$/, "");
@@ -478,6 +484,61 @@ export default function StudyMateApp() {
                 )}
               </div>
 
+              {/* Difficulty Level Selector */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-800 mb-2">
+                  Select Difficulty Level
+                </label>
+                <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setDifficulty("Easy")}
+                    className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      difficulty === "Easy"
+                        ? "bg-white text-emerald-700 shadow-xs border border-emerald-200"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>Easy</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setDifficulty("Medium")}
+                    className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      difficulty === "Medium"
+                        ? "bg-white text-indigo-700 shadow-xs border border-indigo-200"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                    <span>Medium</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setDifficulty("Hard")}
+                    className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      difficulty === "Hard"
+                        ? "bg-white text-purple-700 shadow-xs border border-purple-200"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                    <span>Hard</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  {difficulty === "Easy" && "🟢 Foundational definitions, core terms & straightforward recall."}
+                  {difficulty === "Medium" && "🔵 Balanced conceptual understanding, application & key mechanisms."}
+                  {difficulty === "Hard" && "🟣 Deep analytical thinking, multi-step problem solving & advanced nuance."}
+                </p>
+              </div>
+
               {/* Action Button */}
               <div className="pt-2">
                 <button
@@ -640,6 +701,43 @@ export default function StudyMateApp() {
             {/* Tab Content: Flashcards */}
             {activeTab === "flashcards" && (
               <div className="space-y-6">
+                {/* Most Important Topics Highlight */}
+                {data.important_topics && data.important_topics.length > 0 && (
+                  <div className="bg-white border border-amber-200/90 rounded-2xl p-5 shadow-xs bg-gradient-to-br from-amber-50/50 via-white to-indigo-50/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-amber-500 text-base">⭐</span>
+                        <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
+                          Most Important Topics
+                        </h3>
+                        <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-200">
+                          {data.important_topics.length} Key Takeaways
+                        </span>
+                      </div>
+                      {data.difficulty && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                          {data.difficulty} Mode
+                        </span>
+                      )}
+                    </div>
+                    <ul className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      {data.important_topics.map((topic, tIdx) => (
+                        <li
+                          key={tIdx}
+                          className="flex items-start space-x-2 p-2.5 rounded-xl bg-white/90 border border-amber-100 shadow-2xs text-xs text-slate-800"
+                        >
+                          <span className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-bold flex items-center justify-center shrink-0 text-[10px] mt-0.5">
+                            {tIdx + 1}
+                          </span>
+                          <div className="flex-1 leading-snug">
+                            <MathText content={topic} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {/* Progress bar */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
