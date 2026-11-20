@@ -90,6 +90,15 @@
   - Added "Load Math Sample" button (calculus and linear algebra) to test math formulas in one click.
   - Tested live against complex algebra and calculus notes with confirmed valid symbol rendering and zero corrupted glyphs.
 
+### Step 7: Client-Side Local History
+- **Date**: 2026-11-20
+- **Status**: Complete & Tested
+  - Implemented automatic local history persistence in browser `localStorage` after each successful generation (timestamp, notes snippet title, notes length, and generated flashcards & quiz).
+  - Added top header "History" button with dynamic count badge and a dedicated modal browser for viewing, reopening, or deleting past generations.
+  - Added prominent "Past Generations" card on the home screen for one-click reopening of previous study sets.
+  - Zero backend/server storage footprint: 100% private and client-side with no account or privacy tradeoffs.
+  - Verified storage, reopening, single-item deletion, and clear-all operations.
+
 ---
 
 #### Endpoint Reference: `POST /generate`

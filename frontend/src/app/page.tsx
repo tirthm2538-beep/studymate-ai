@@ -22,6 +22,14 @@ interface GenerateResponse {
   quiz: QuizQuestion[];
 }
 
+interface HistoryItem {
+  id: string;
+  timestamp: number;
+  title: string;
+  notesLength: number;
+  data: GenerateResponse;
+}
+
 const SAMPLE_NOTES = `Cellular Respiration and Photosynthesis:
 Photosynthesis occurs in chloroplasts where plants absorb light energy via chlorophyll. 
 Light reactions convert H2O and light into ATP and NADPH, releasing O2 as a byproduct. 
@@ -55,7 +63,71 @@ export default function StudyMateApp() {
   const [selectedAnswers, setSelectedAnswers] = useState<{ [key: number]: number }>({});
   const [quizFinished, setQuizFinished] = useState(false);
 
+  // Local History state (browser-only, strictly client-side)
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load history from localStorage on initial render
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("studymate_local_history_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setHistory(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn("Unable to load history from localStorage:", e);
+    }
+  }, []);
+
+  // Save item to browser localStorage
+  const saveHistoryRecord = (newItem: HistoryItem) => {
+    setHistory((prev) => {
+      const updated = [newItem, ...prev.filter((h) => h.id !== newItem.id)].slice(0, 25);
+      try {
+        localStorage.setItem("studymate_local_history_v1", JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Failed to write history to localStorage:", e);
+      }
+      return updated;
+    });
+  };
+
+  const deleteHistoryRecord = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setHistory((prev) => {
+      const updated = prev.filter((h) => h.id !== id);
+      try {
+        localStorage.setItem("studymate_local_history_v1", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const clearAllHistory = () => {
+    if (window.confirm("Clear all locally stored study sets? This action is irreversible.")) {
+      setHistory([]);
+      try {
+        localStorage.removeItem("studymate_local_history_v1");
+      } catch {}
+    }
+  };
+
+  const openHistoryRecord = (item: HistoryItem) => {
+    setData(item.data);
+    setActiveTab("flashcards");
+    setCurrentCardIndex(0);
+    setIsFlipped(false);
+    setCurrentQuizIndex(0);
+    setSelectedAnswers({});
+    setQuizFinished(false);
+    setShowHistoryModal(false);
+    setErrorMessage(null);
+  };
 
   // Reset flip when card index changes
   useEffect(() => {
@@ -126,6 +198,20 @@ export default function StudyMateApp() {
 
       const responseData: GenerateResponse = await res.json();
       setData(responseData);
+
+      // Save lightweight record to browser's localStorage (purely client-side)
+      const snippet = notesText.trim()
+        ? notesText.trim().replace(/\s+/g, " ").slice(0, 60) + (notesText.trim().length > 60 ? "..." : "")
+        : (selectedFile ? selectedFile.name : "Study Notes Session");
+
+      saveHistoryRecord({
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        title: snippet,
+        notesLength: responseData.notes_length,
+        data: responseData,
+      });
+
       setActiveTab("flashcards");
       setCurrentCardIndex(0);
       setIsFlipped(false);
@@ -231,6 +317,22 @@ export default function StudyMateApp() {
           </div>
 
           <div className="flex items-center space-x-3">
+            <button
+              type="button"
+              onClick={() => setShowHistoryModal(true)}
+              className="text-xs sm:text-sm font-semibold text-slate-700 hover:text-indigo-600 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-indigo-300 transition-colors bg-white hover:bg-indigo-50/50 cursor-pointer flex items-center space-x-1.5 shadow-xs"
+            >
+              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>History</span>
+              {history.length > 0 && (
+                <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-0.5">
+                  {history.length}
+                </span>
+              )}
+            </button>
+
             {data && (
               <button
                 onClick={handleReset}
@@ -425,6 +527,86 @@ export default function StudyMateApp() {
                 <p className="text-xs text-slate-500 mt-1">Upload lecture slides, summaries, or syllabi up to 25MB.</p>
               </div>
             </div>
+
+            {/* Past Generations (Local Browser History) */}
+            {history.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-base font-bold text-slate-900">Past Generations</span>
+                    <span className="text-xs bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full border border-indigo-200/60">
+                      {history.length} saved
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearAllHistory}
+                    className="text-xs text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                  >
+                    Clear History
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {history.slice(0, 4).map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => openHistoryRecord(item)}
+                      className="p-4 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all cursor-pointer group flex flex-col justify-between space-y-3 bg-slate-50/50"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-start justify-between">
+                          <h4 className="text-sm font-semibold text-slate-800 group-hover:text-indigo-600 line-clamp-1 transition-colors">
+                            {item.title}
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={(e) => deleteHistoryRecord(item.id, e)}
+                            className="text-slate-300 hover:text-red-500 ml-2 p-0.5 rounded transition-colors"
+                            title="Delete this set"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          {new Date(item.timestamp).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
+                        <span className="font-medium text-indigo-700">
+                          {item.data.flashcards.length} cards &bull; {item.data.quiz.length} questions
+                        </span>
+                        <span className="text-indigo-600 font-semibold group-hover:underline flex items-center space-x-1">
+                          <span>Reopen</span>
+                          <span>&rarr;</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-1 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100">
+                  <span>🔒 Saved strictly in your browser (localStorage). No server storage or privacy tradeoff.</span>
+                  {history.length > 4 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowHistoryModal(true)}
+                      className="text-indigo-600 hover:underline font-semibold cursor-pointer"
+                    >
+                      View all {history.length} sets &rarr;
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -731,6 +913,123 @@ export default function StudyMateApp() {
           StudyMate AI &bull; Built with Next.js, FastAPI &amp; Google Gemini
         </div>
       </footer>
+
+      {/* Local History Modal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Study History</h3>
+                  <p className="text-xs text-slate-500">
+                    {history.length} {history.length === 1 ? "set" : "sets"} saved locally in your browser
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer text-lg font-bold"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-3 flex-1">
+              {history.length === 0 ? (
+                <div className="text-center py-12 space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center text-xl">
+                    📚
+                  </div>
+                  <h4 className="font-semibold text-slate-700 text-sm">No Study History Yet</h4>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Generate flashcards and quizzes from your notes. Each session is saved right here in your browser for instant recall.
+                  </p>
+                </div>
+              ) : (
+                history.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => openHistoryRecord(item)}
+                    className="p-4 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20 transition-all cursor-pointer flex items-center justify-between group bg-slate-50/30"
+                  >
+                    <div className="min-w-0 flex-1 pr-4 space-y-1">
+                      <h4 className="text-sm font-semibold text-slate-800 group-hover:text-indigo-600 truncate transition-colors">
+                        {item.title}
+                      </h4>
+                      <div className="flex items-center space-x-3 text-xs text-slate-500">
+                        <span>
+                          {new Date(item.timestamp).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        <span>&bull;</span>
+                        <span className="font-medium text-indigo-700">
+                          {item.data.flashcards.length} cards, {item.data.quiz.length} questions
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200/60 transition-colors">
+                        Reopen &rarr;
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => deleteHistoryRecord(item.id, e)}
+                        className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Delete"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                🔒 Client-only storage: data is kept in browser localStorage.
+              </span>
+              <div className="flex items-center space-x-2">
+                {history.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearAllHistory}
+                    className="text-red-600 hover:text-red-700 font-semibold px-2 py-1 rounded hover:bg-red-50 transition-colors cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(false)}
+                  className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
