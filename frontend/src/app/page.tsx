@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import MathText from "./components/MathText";
 
 interface Flashcard {
   front: string;
@@ -27,6 +28,13 @@ Light reactions convert H2O and light into ATP and NADPH, releasing O2 as a bypr
 The Calvin cycle (light-independent reactions) uses ATP and NADPH to fix CO2 into glucose.
 Cellular respiration takes place in the mitochondria to break down glucose into ATP. 
 Its four main stages are Glycolysis (cytoplasm, anaerobic), Pyruvate oxidation, Krebs Cycle (citric acid cycle), and Oxidative Phosphorylation (electron transport chain, producing ~30-32 ATP).`;
+
+const SAMPLE_MATH_NOTES = `Calculus and Algebra Study Notes:
+1. Fundamental Theorem of Calculus: If f is continuous on [a, b] and F'(x) = f(x), then \\int_a^b f(x) dx = F(b) - F(a).
+2. Derivative Power Rule: \\frac{d}{dx}[x^n] = n x^{n-1}. For example, \\frac{d}{dx}[x^3] = 3x^2.
+3. Quadratic Formula: For any equation ax^2 + bx + c = 0, the solutions are x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}.
+4. Euler's Identity: e^{i \\pi} + 1 = 0, connecting fundamental constants e, i, \\pi, 1, and 0.
+5. Linear Algebra Matrix Determinant: For 2x2 matrix [[a, b], [c, d]], det(A) = ad - bc. The matrix is invertible if det(A) \\neq 0.`;
 
 export default function StudyMateApp() {
   const [notesText, setNotesText] = useState("");
@@ -287,13 +295,23 @@ export default function StudyMateApp() {
                   <label className="text-sm font-semibold text-slate-800">
                     Paste Study Notes
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setNotesText(SAMPLE_NOTES)}
-                    className="text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-                  >
-                    Load Biology Sample
-                  </button>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => setNotesText(SAMPLE_NOTES)}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                    >
+                      Load Biology Sample
+                    </button>
+                    <span className="text-slate-300 text-xs">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setNotesText(SAMPLE_MATH_NOTES)}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                    >
+                      Load Math Sample
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   rows={7}
@@ -482,11 +500,15 @@ export default function StudyMateApp() {
                   </div>
 
                   <div className="my-auto py-6 px-4 max-w-xl">
-                    <p className={`text-slate-900 leading-relaxed ${isFlipped ? "text-lg text-slate-800" : "text-xl sm:text-2xl font-semibold"}`}>
-                      {isFlipped
-                        ? data.flashcards[currentCardIndex].back
-                        : data.flashcards[currentCardIndex].front}
-                    </p>
+                    <div className={`text-slate-900 leading-relaxed ${isFlipped ? "text-lg text-slate-800" : "text-xl sm:text-2xl font-semibold"}`}>
+                      <MathText
+                        content={
+                          isFlipped
+                            ? data.flashcards[currentCardIndex].back
+                            : data.flashcards[currentCardIndex].front
+                        }
+                      />
+                    </div>
                   </div>
 
                   <div className="text-xs text-slate-400">
@@ -556,7 +578,7 @@ export default function StudyMateApp() {
 
                     {/* Question text */}
                     <h3 className="text-lg sm:text-xl font-bold text-slate-900 leading-snug">
-                      {data.quiz[currentQuizIndex].question}
+                      <MathText content={data.quiz[currentQuizIndex].question} />
                     </h3>
 
                     {/* Options list */}
@@ -590,7 +612,9 @@ export default function StudyMateApp() {
                             <span className="w-6 h-6 rounded-md border border-current flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                               {String.fromCharCode(65 + optIdx)}
                             </span>
-                            <span className="flex-1">{option}</span>
+                            <span className="flex-1">
+                              <MathText content={option} />
+                            </span>
                             {hasAnswered && isCorrect && (
                               <svg className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
@@ -612,9 +636,9 @@ export default function StudyMateApp() {
                         <span className="font-bold text-slate-800 text-xs uppercase tracking-wide">
                           Explanation:
                         </span>
-                        <p className="text-slate-600 leading-relaxed">
-                          {data.quiz[currentQuizIndex].explanation}
-                        </p>
+                        <div className="text-slate-600 leading-relaxed">
+                          <MathText content={data.quiz[currentQuizIndex].explanation} />
+                        </div>
                       </div>
                     )}
 

@@ -80,6 +80,16 @@
   - Increased Gemini API request timeout to 60s for handling complex documents.
   - Tested and verified with genuine 25-page academic PDF documents (both standard and 120,000+ character dense documents), producing valid flashcards and practice quizzes.
 
+### Step 6: Math Symbol Rendering (KaTeX + Plain Notation)
+- **Date**: 2026-11-20
+- **Status**: Complete & Tested
+  - Enhanced Gemini prompt with explicit mathematical rules to generate clean, readable expressions (exponents, fractions, roots, differentials) and standard LaTeX with delimiters, preventing corrupted unicode glyphs.
+  - Resolved Python template string brace conflicts for mathematical LaTeX notation.
+  - Integrated KaTeX and KaTeX CSS into Next.js frontend with modular `MathText` parser component supporting inline math, block math, and raw LaTeX notation.
+  - Upgraded Flashcards, Quiz questions, options, and explanations to render math symbols with typographic clarity.
+  - Added "Load Math Sample" button (calculus and linear algebra) to test math formulas in one click.
+  - Tested live against complex algebra and calculus notes with confirmed valid symbol rendering and zero corrupted glyphs.
+
 ---
 
 #### Endpoint Reference: `POST /generate`

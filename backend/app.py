@@ -31,6 +31,11 @@ DEFAULT_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-3.5-flash-lite")
 
 STUDY_PROMPT_TEMPLATE = """You are an expert educational study assistant. Analyze the student's study notes below and generate structured study materials.
 
+Mathematical formatting instructions:
+- Express mathematical equations, formulas, exponents, fractions, and special symbols in clean, readable notation.
+- Use simple, clean notation (e.g., x^2, sqrt(x), dy/dx, (a + b)/c) or standard LaTeX enclosed in single dollar signs for inline math (e.g., $x^2 + y^2 = r^2$, $\\frac{{dy}}{{dx}} = 2x$) or double dollar signs for display equations (e.g., $$\\int_0^1 x^2 dx = \\frac{{1}}{{3}}$$).
+- Never output broken unicode characters, corrupt glyphs, or unescaped messy notation.
+
 You must generate:
 1. flashcards: Exactly 8 to 10 high-yield flashcard pairs covering key concepts, definitions, formulas, or facts.
    Each flashcard object MUST contain:
@@ -241,7 +246,7 @@ async def generate(
     # Intelligently condense long notes if document is large (e.g. 20+ pages)
     effective_notes = condense_long_notes(notes_text)
 
-    prompt = STUDY_PROMPT_TEMPLATE.format(notes=effective_notes.strip())
+    prompt = STUDY_PROMPT_TEMPLATE.replace("{notes}", effective_notes.strip())
 
     try:
         response = model.generate_content(prompt, request_options={"timeout": 60})
