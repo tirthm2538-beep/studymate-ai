@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 import io
 import json
 import os
+import re
 import pypdf
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -77,12 +78,68 @@ JSON output structure:
     }}
   ]
 }}
-
+{sample_paper_instruction}
 Student's notes:
 ---
 {notes}
 ---
 """
+
+def sanitize_json_string(s: str) -> str:
+    """
+    Sanitize JSON text from LLM so that LaTeX backslashes (like \\Delta, \\frac, \\sqrt)
+    do not cause JSONDecodeError: Invalid \\escape.
+    """
+    res = []
+    i = 0
+    n = len(s)
+    in_string = False
+
+    while i < n:
+        c = s[i]
+        if c == '"' and (i == 0 or s[i - 1] != '\\'):
+            in_string = not in_string
+            res.append(c)
+            i += 1
+            continue
+
+        if in_string and c == '\\':
+            if i + 1 < n:
+                next_c = s[i + 1]
+                if next_c in '"\\/':
+                    res.append(c)
+                    res.append(next_c)
+                    i += 2
+                    continue
+                elif next_c in 'bfnrt':
+                    peek = s[i + 1 : i + 6]
+                    if re.match(r'^(frac|beta|bar|bf|bullet|nabla|nu|ne|neq|times|tau|text|theta|to|rho|right)\b', peek):
+                        res.append('\\\\')
+                        i += 1
+                        continue
+                    else:
+                        res.append(c)
+                        res.append(next_c)
+                        i += 2
+                        continue
+                elif next_c == 'u' and i + 5 < n and re.match(r'^[0-9a-fA-F]{4}$', s[i + 2 : i + 6]):
+                    res.append(c)
+                    res.append(next_c)
+                    i += 2
+                    continue
+                else:
+                    res.append('\\\\')
+                    i += 1
+                    continue
+            else:
+                res.append('\\\\')
+                i += 1
+                continue
+
+        res.append(c)
+        i += 1
+
+    return "".join(res)
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract plain text from PDF bytes using pypdf, preserving page context and handling extraction errors."""
@@ -196,16 +253,19 @@ async def generate(
     request: Request,
     text: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
-    difficulty: Optional[str] = Form("Medium")
+    difficulty: Optional[str] = Form("Medium"),
+    sample_paper_file: Optional[UploadFile] = File(None),
+    sample_paper_text: Optional[str] = Form(None)
 ):
     """
     Generate flashcards and quiz questions from provided student notes.
     Accepts:
-    - multipart/form-data with 'text', 'file', 'difficulty'
-    - application/json with {"text": "...", "difficulty": "..."}
+    - multipart/form-data with 'text', 'file', 'difficulty', 'sample_paper_file', 'sample_paper_text'
+    - application/json with {"text": "...", "difficulty": "...", "sample_paper_text": "..."}
     """
     content_type = request.headers.get("content-type", "")
     notes_text = ""
+    reference_paper_text = ""
 
     # Check for application/json payload
     if "application/json" in content_type:
@@ -215,13 +275,15 @@ async def generate(
                 notes_text = body.get("text", "") or ""
                 if "difficulty" in body:
                     difficulty = body.get("difficulty")
+                if "sample_paper_text" in body:
+                    reference_paper_text = body.get("sample_paper_text", "") or ""
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid JSON payload in request body."
             )
     else:
-        # Check uploaded file first
+        # Check uploaded notes file first
         if file is not None and file.filename:
             file_bytes = await file.read()
             if len(file_bytes) > MAX_FILE_SIZE:
@@ -247,6 +309,36 @@ async def generate(
                     detail="Unsupported file format. Please upload a .pdf or .txt file."
                 )
 
+        # Check uploaded sample question paper file
+        if sample_paper_file is not None and sample_paper_file.filename:
+            sp_bytes = await sample_paper_file.read()
+            if len(sp_bytes) > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"Sample question paper exceeds maximum size of {MAX_FILE_SIZE // (1024 * 1024)}MB."
+                )
+
+            sp_name = sample_paper_file.filename.lower()
+            if sp_name.endswith(".pdf"):
+                reference_paper_text = extract_text_from_pdf(sp_bytes)
+            elif sp_name.endswith(".txt"):
+                try:
+                    reference_paper_text = sp_bytes.decode("utf-8", errors="replace").strip()
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Unable to decode sample paper file: {str(e)}"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Sample question paper must be a .pdf or .txt file."
+                )
+
+        # Fallback to pasted sample paper text if not provided via file
+        if not reference_paper_text and sample_paper_text:
+            reference_paper_text = sample_paper_text.strip()
+
         # If no file or empty file text, fallback to pasted text form field
         if not notes_text and text:
             notes_text = text.strip()
@@ -265,6 +357,22 @@ async def generate(
         if cap in valid_difficulties:
             selected_difficulty = cap
 
+    # Style & format matching instruction if sample paper was provided
+    sample_paper_instruction = ""
+    if reference_paper_text and reference_paper_text.strip():
+        sample_paper_instruction = f"""
+STYLE AND FORMAT MATCHING REQUIREMENT:
+The student has provided a reference question paper below. You MUST format and frame the 5 quiz questions to closely match the style, question phrasing conventions, structure, and question phrasing of this reference paper:
+- Adopt similar question phrasing (e.g. scenario prompts, Roman numeral statements, direct calculation requests, or specific question stems).
+- Match the question sophistication, tone, and distractor options demonstrated in the reference paper.
+- Test the concepts from the student's study notes, but frame the quiz questions in this exact exam style.
+
+Reference Sample Question Paper:
+---
+{reference_paper_text[:15000].strip()}
+---
+"""
+
     # Initialize Gemini model
     model = get_gemini_client()
 
@@ -274,6 +382,7 @@ async def generate(
     prompt = (
         STUDY_PROMPT_TEMPLATE
         .replace("{difficulty}", selected_difficulty)
+        .replace("{sample_paper_instruction}", sample_paper_instruction)
         .replace("{notes}", effective_notes.strip())
     )
 
@@ -302,7 +411,6 @@ async def generate(
     try:
         data = json.loads(raw_output)
     except json.JSONDecodeError:
-        # Fallback if markdown code blocks were included
         cleaned = raw_output
         if cleaned.startswith("```json"):
             cleaned = cleaned[7:]
@@ -310,13 +418,18 @@ async def generate(
             cleaned = cleaned[3:]
         if cleaned.endswith("```"):
             cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
         try:
-            data = json.loads(cleaned.strip())
-        except json.JSONDecodeError as err:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to parse Gemini output as JSON: {str(err)}"
-            )
+            data = json.loads(cleaned)
+        except json.JSONDecodeError:
+            try:
+                sanitized = sanitize_json_string(cleaned)
+                data = json.loads(sanitized)
+            except json.JSONDecodeError as err:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Failed to parse Gemini output as JSON: {str(err)}"
+                )
 
     # Validate output schema
     flashcards = data.get("flashcards")
@@ -335,6 +448,7 @@ async def generate(
         "status": "success",
         "notes_length": len(notes_text),
         "difficulty": selected_difficulty,
+        "format_matched": bool(reference_paper_text and reference_paper_text.strip()),
         "important_topics": important_topics,
         "flashcards": flashcards,
         "quiz": quiz

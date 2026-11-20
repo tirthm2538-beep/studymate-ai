@@ -19,6 +19,7 @@ interface GenerateResponse {
   status: string;
   notes_length: number;
   difficulty?: string;
+  format_matched?: boolean;
   important_topics?: string[];
   flashcards: Flashcard[];
   quiz: QuizQuestion[];
@@ -71,6 +72,12 @@ export default function StudyMateApp() {
   // Local History state (browser-only, strictly client-side)
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  // Match Question Paper Format state
+  const [samplePaperFile, setSamplePaperFile] = useState<File | null>(null);
+  const [samplePaperText, setSamplePaperText] = useState("");
+  const [showSamplePaperInput, setShowSamplePaperInput] = useState(false);
+  const samplePaperInputRef = useRef<HTMLInputElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -167,6 +174,33 @@ export default function StudyMateApp() {
     }
   };
 
+  // Handle sample question paper selection
+  const handleSamplePaperChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const validTypes = [".pdf", ".txt"];
+      const hasValidExt = validTypes.some((ext) => file.name.toLowerCase().endsWith(ext));
+
+      if (!hasValidExt) {
+        setErrorMessage("Sample paper must be a valid PDF (.pdf) or text (.txt) file.");
+        return;
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        setErrorMessage("Sample paper exceeds 25MB limit.");
+        return;
+      }
+      setSamplePaperFile(file);
+      setErrorMessage(null);
+    }
+  };
+
+  const removeSamplePaper = () => {
+    setSamplePaperFile(null);
+    if (samplePaperInputRef.current) {
+      samplePaperInputRef.current.value = "";
+    }
+  };
+
   // Generate handler
   const handleGenerate = async () => {
     setErrorMessage(null);
@@ -187,6 +221,12 @@ export default function StudyMateApp() {
         formData.append("file", selectedFile);
       }
       formData.append("difficulty", difficulty);
+      if (samplePaperFile) {
+        formData.append("sample_paper_file", samplePaperFile);
+      }
+      if (samplePaperText.trim()) {
+        formData.append("sample_paper_text", samplePaperText.trim());
+      }
 
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
       const cleanBaseUrl = apiBaseUrl.replace(/\/+$/, "");
@@ -246,6 +286,11 @@ export default function StudyMateApp() {
     setCurrentQuizIndex(0);
     setSelectedAnswers({});
     setQuizFinished(false);
+    setSamplePaperFile(null);
+    setSamplePaperText("");
+    if (samplePaperInputRef.current) {
+      samplePaperInputRef.current.value = "";
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -539,6 +584,89 @@ export default function StudyMateApp() {
                 </p>
               </div>
 
+              {/* Match Exam Format Option (Collapsible / Toggle) */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/60 transition-all">
+                <button
+                  type="button"
+                  onClick={() => setShowSamplePaperInput(!showSamplePaperInput)}
+                  className="w-full px-4 py-3 flex items-center justify-between text-left text-xs sm:text-sm font-semibold text-slate-800 hover:bg-slate-100/60 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className="text-base">🎯</span>
+                    <span>Match Exam Question Style (Optional)</span>
+                    {(samplePaperFile || samplePaperText.trim()) && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-slate-400 text-xs">
+                    {showSamplePaperInput ? "Hide ▲" : "Configure ▼"}
+                  </span>
+                </button>
+
+                {showSamplePaperInput && (
+                  <div className="p-4 pt-1 border-t border-slate-200/80 space-y-3 bg-white">
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Upload or paste a past paper or sample exam. Gemini will model question phrasing, tone, and structure to match your exam.
+                    </p>
+
+                    {/* File Upload for Sample Paper */}
+                    <div>
+                      <input
+                        ref={samplePaperInputRef}
+                        type="file"
+                        accept=".pdf,.txt"
+                        disabled={isLoading}
+                        onChange={handleSamplePaperChange}
+                        className="hidden"
+                        id="sample-paper-upload"
+                      />
+
+                      {!samplePaperFile ? (
+                        <label
+                          htmlFor="sample-paper-upload"
+                          className="flex items-center justify-center space-x-2 border border-dashed border-slate-300 hover:border-indigo-400 rounded-lg p-2.5 cursor-pointer bg-slate-50 hover:bg-indigo-50/20 text-xs text-slate-600 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          <span>Upload Sample Paper (PDF or TXT up to 25MB)</span>
+                        </label>
+                      ) : (
+                        <div className="flex items-center justify-between p-2.5 bg-indigo-50/60 border border-indigo-200 rounded-lg text-xs">
+                          <span className="font-medium text-slate-800 truncate">
+                            📄 {samplePaperFile.name} ({(samplePaperFile.size / 1024).toFixed(1)} KB)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={removeSamplePaper}
+                            className="text-red-600 hover:text-red-800 font-semibold ml-2 cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Or paste sample questions */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-slate-500 block mb-1">
+                        Or paste sample questions directly:
+                      </span>
+                      <textarea
+                        rows={3}
+                        disabled={isLoading}
+                        value={samplePaperText}
+                        onChange={(e) => setSamplePaperText(e.target.value)}
+                        placeholder="Paste 1-3 typical questions from your syllabus or past exams (e.g. '1. Which of the following statements is correct...?')..."
+                        className="w-full px-3 py-2 text-xs text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white resize-y placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Action Button */}
               <div className="pt-2">
                 <button
@@ -829,6 +957,17 @@ export default function StudyMateApp() {
               <div className="space-y-6">
                 {!quizFinished ? (
                   <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
+                    {/* Exam Style Match Badge */}
+                    {data.format_matched && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200/90 rounded-xl text-xs text-emerald-900 flex items-center space-x-2.5 shadow-2xs">
+                        <span className="text-base">🎯</span>
+                        <div>
+                          <span className="font-bold">Exam Question Style Matched:</span>{" "}
+                          <span>Phrasing, structure, and distractors modeled after your reference question paper.</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 2. Progress Indicator on the Quiz */}
                     <div className="space-y-3 pb-2 border-b border-slate-100">
                       <div className="flex items-center justify-between">

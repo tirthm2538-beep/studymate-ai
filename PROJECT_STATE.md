@@ -107,6 +107,15 @@
   - Extracted 3 to 5 "Most Important Topics" from study material, displayed as a highlighted executive summary card directly alongside flashcards with KaTeX math rendering and difficulty badge.
   - Verified across Easy and Hard test sets with verified topic extraction and calibrated question nuances.
 
+### Step 9: "Match This Format" Exam Paper Emulation
+- **Date**: 2026-11-20
+- **Status**: Complete & Tested
+  - Added optional "Match Exam Question Style" section in frontend with support for uploading reference papers (PDF / TXT up to 25MB) or pasting sample exam questions.
+  - Updated backend endpoint to extract reference paper text and provide specialized style-matching guidance to Gemini.
+  - Formulates quiz questions with authentic phrasing patterns, assertions (e.g. Roman numerals I, II, III), structure, and distractors matching the reference paper while testing concepts from the student's study notes.
+  - Added prominent "Exam Format Matched" indicator on the Quiz tab.
+  - Tested with a multi-assertion reference exam paper with 5/5 questions matching the reference paper style.
+
 ---
 
 #### Endpoint Reference: `POST /generate`
@@ -115,12 +124,15 @@
   - `text` (string, optional): Pasted study notes.
   - `file` (binary, optional): Uploaded `.pdf` or `.txt` file (max 25MB).
   - `difficulty` (string, optional): "Easy", "Medium", or "Hard" (default: "Medium").
+  - `sample_paper_file` (binary, optional): Uploaded sample question paper (.pdf or .txt, max 25MB).
+  - `sample_paper_text` (string, optional): Pasted sample question paper text.
 - **Response Format (`application/json`)**:
   ```json
   {
     "status": "success",
     "notes_length": 1273,
     "difficulty": "Medium",
+    "format_matched": true,
     "important_topics": [
       "Topic 1: Core principle...",
       "Topic 2: Key formula...",
