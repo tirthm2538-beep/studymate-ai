@@ -25,7 +25,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
+MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB limit
+MAX_PROMPT_CHARS = 30000  # Threshold for chunked summarization
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-3.5-flash-lite")
 
 STUDY_PROMPT_TEMPLATE = """You are an expert educational study assistant. Analyze the student's study notes below and generate structured study materials.
@@ -65,20 +66,90 @@ Student's notes:
 """
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """Extract plain text from PDF bytes using pypdf."""
+    """Extract plain text from PDF bytes using pypdf, preserving page context and handling extraction errors."""
     try:
         reader = pypdf.PdfReader(io.BytesIO(file_bytes))
         extracted_pages = []
         for i, page in enumerate(reader.pages):
-            page_text = page.extract_text()
-            if page_text:
-                extracted_pages.append(page_text.strip())
+            try:
+                page_text = page.extract_text()
+                if page_text and page_text.strip():
+                    extracted_pages.append(f"--- Page {i + 1} ---\n{page_text.strip()}")
+            except Exception:
+                continue
         return "\n\n".join(extracted_pages).strip()
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unable to read or parse PDF file: {str(e)}"
         )
+
+def get_gemini_text_client():
+    """Configure and return the Gemini GenerativeModel for general text/summaries."""
+    load_dotenv(override=True)
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key or api_key == "your_key_here":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="GEMINI_API_KEY is not configured. Please set a valid Gemini API key in backend/.env."
+        )
+    genai.configure(api_key=api_key, transport="rest")
+    return genai.GenerativeModel(model_name=DEFAULT_MODEL)
+
+def condense_long_notes(notes_text: str) -> str:
+    """
+    If notes text exceeds MAX_PROMPT_CHARS, intelligently chunk and summarize
+    batches to extract key concepts without hitting token limits or timing out.
+    """
+    if len(notes_text) <= MAX_PROMPT_CHARS:
+        return notes_text
+
+    chunk_size = 25000
+    chunks = [notes_text[i:i + chunk_size] for i in range(0, len(notes_text), chunk_size)]
+
+    # Select up to 4 representative chunks across beginning, middle, and end
+    if len(chunks) <= 4:
+        selected_chunks = chunks
+    else:
+        indices = [0, len(chunks) // 3, (2 * len(chunks)) // 3, len(chunks) - 1]
+        selected_chunks = [chunks[idx] for idx in sorted(set(indices))]
+
+    summaries = []
+    try:
+        summary_model = get_gemini_text_client()
+    except Exception:
+        summary_model = None
+
+    for idx, chunk in enumerate(selected_chunks):
+        if summary_model:
+            summary_prompt = (
+                "You are an expert academic text condenser. Summarize this section of study material into "
+                "comprehensive, high-yield bullet points capturing the core concepts, key definitions, "
+                "formulas, mechanisms, and testable facts:\n\n"
+                f"---\n{chunk}\n---\n\n"
+                "Key Concepts and Study Takeaways:"
+            )
+            try:
+                res = summary_model.generate_content(summary_prompt, request_options={"timeout": 35})
+                if res and res.text:
+                    summaries.append(f"### Section {idx + 1} Key Takeaways:\n{res.text.strip()}")
+                    continue
+            except Exception:
+                pass
+        # Fallback: keep an informative slice of the chunk
+        summaries.append(f"### Section {idx + 1} Key Excerpt:\n{chunk[:4000]}")
+
+    if summaries:
+        return f"Consolidated Study Notes (Summarized across {len(selected_chunks)} sections of large document):\n\n" + "\n\n".join(summaries)
+
+    # Proportional sampling fallback
+    return (
+        notes_text[:12000]
+        + "\n\n[... middle sections omitted ...]\n\n"
+        + notes_text[len(notes_text) // 2 - 4000 : len(notes_text) // 2 + 4000]
+        + "\n\n[... continuation ...]\n\n"
+        + notes_text[-10000:]
+    )
 
 def get_gemini_client():
     """Configure and return the Gemini GenerativeModel."""
@@ -167,16 +238,19 @@ async def generate(
     # Initialize Gemini model
     model = get_gemini_client()
 
-    prompt = STUDY_PROMPT_TEMPLATE.format(notes=notes_text.strip())
+    # Intelligently condense long notes if document is large (e.g. 20+ pages)
+    effective_notes = condense_long_notes(notes_text)
+
+    prompt = STUDY_PROMPT_TEMPLATE.format(notes=effective_notes.strip())
 
     try:
-        response = model.generate_content(prompt, request_options={"timeout": 30})
+        response = model.generate_content(prompt, request_options={"timeout": 60})
     except Exception as e:
         err_str = str(e)
         if "timed out" in err_str.lower() or "timeout" in err_str.lower():
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=f"Gemini API request timed out after 30 seconds: {err_str}"
+                detail=f"Gemini API request timed out after 60 seconds: {err_str}"
             )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

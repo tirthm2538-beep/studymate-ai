@@ -65,8 +65,8 @@ export default function StudyMateApp() {
         setErrorMessage("Please select a valid PDF (.pdf) or text (.txt) file.");
         return;
       }
-      if (file.size > 10 * 1024 * 1024) {
-        setErrorMessage("File exceeds 10MB limit.");
+      if (file.size > 25 * 1024 * 1024) {
+        setErrorMessage("File exceeds 25MB limit.");
         return;
       }
 
@@ -333,7 +333,7 @@ export default function StudyMateApp() {
                     <span className="text-sm font-medium text-slate-700 group-hover:text-indigo-600">
                       Click to upload notes document
                     </span>
-                    <span className="text-xs text-slate-500 mt-1">Supports PDF or TXT up to 10MB</span>
+                    <span className="text-xs text-slate-500 mt-1">Supports PDF or TXT up to 25MB</span>
                   </label>
                 ) : (
                   <div className="flex items-center justify-between p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl">
@@ -404,7 +404,7 @@ export default function StudyMateApp() {
                   ⚡
                 </div>
                 <h3 className="font-semibold text-slate-900 text-sm">Instant Processing</h3>
-                <p className="text-xs text-slate-500 mt-1">Upload lecture slides, summaries, or syllabi up to 10MB.</p>
+                <p className="text-xs text-slate-500 mt-1">Upload lecture slides, summaries, or syllabi up to 25MB.</p>
               </div>
             </div>
           </div>

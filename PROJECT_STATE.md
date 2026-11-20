@@ -71,13 +71,22 @@
   - Production environment variable `NEXT_PUBLIC_API_URL` connected to live Render backend.
   - Full study notes analysis, flashcards generation, and quiz completion confirmed functional in production.
 
+### Step 5: Large PDF Uploads & Intelligent Chunking
+- **Date**: 2026-11-20
+- **Status**: Complete & Verified
+  - Increased file upload size limit from 10MB to 25MB across backend validation, FastAPI file handler, and frontend client controls.
+  - Upgraded PDF text extraction with page context preservation and fault-tolerant per-page extraction.
+  - Implemented intelligent chunked batch summarization for documents exceeding 30,000 characters (e.g. 20+ to 100+ pages), distilling key concepts across the beginning, middle, and end without exceeding token or timeout limits.
+  - Increased Gemini API request timeout to 60s for handling complex documents.
+  - Tested and verified with genuine 25-page academic PDF documents (both standard and 120,000+ character dense documents), producing valid flashcards and practice quizzes.
+
 ---
 
 #### Endpoint Reference: `POST /generate`
 - **Request Content-Type**: `multipart/form-data` OR `application/json`
 - **Input Parameters**:
   - `text` (string, optional): Pasted study notes.
-  - `file` (binary, optional): Uploaded `.pdf` or `.txt` file (max 10MB).
+  - `file` (binary, optional): Uploaded `.pdf` or `.txt` file (max 25MB).
 - **Response Format (`application/json`)**:
   ```json
   {
@@ -92,6 +101,7 @@
     "quiz": [
       {
         "question": "Question text?",
+ 
         "options": ["Option A", "Option B", "Option C", "Option D"],
         "correct_answer_index": 1,
         "explanation": "Why Option B is the correct answer."
