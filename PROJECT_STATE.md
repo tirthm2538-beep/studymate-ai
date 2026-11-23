@@ -138,6 +138,16 @@
   - Added browser localStorage history persistence for revision notes sessions.
   - Verified with comprehensive biological and organic chemistry test suites.
 
+### Step 12: Official NCERT Textbooks Library (Classes 6-12)
+- **Date**: 2026-11-23
+- **Status**: Complete & Tested
+  - Added dedicated "Study Resources" section accessible via top-level navigation toggle between "⚡ AI Study Generator" and "📚 Study Resources".
+  - Created structured dataset (`frontend/src/app/data/ncertBooks.ts`) mapping 21 official NCERT textbooks across Classes 6 through 12 in Biology, Physics, Chemistry, Mathematics, and General Science.
+  - Sourced 222+ individual chapter PDFs directly from official Government of India public links (`ncert.nic.in/textbook/pdf/...`) and textbook portals (`ncert.nic.in/textbook.php?...`), adhering strictly to legal redistribution and authentic official source requirements.
+  - Implemented interactive `NCERTLibrary` component with search filtering (title, subject, key topics, chapter titles), Class filter chips (Classes 6 to 12), and Subject filter chips.
+  - Integrated "⚡ Study with AI" action on every chapter that loads chapter context directly into the AI study generator with prefilled prompt instructions and smoothly transitions to generation mode.
+  - Verified 100% of URLs point to official `ncert.nic.in` domains; verified clean production Next.js build.
+
 ---
 
 #### Endpoint Reference: `POST /generate-notes`

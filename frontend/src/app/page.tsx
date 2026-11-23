@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import MathText from "./components/MathText";
+import NCERTLibrary from "./components/NCERTLibrary";
 
 interface Flashcard {
   front: string;
@@ -83,6 +84,9 @@ export default function StudyMateApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [data, setData] = useState<GenerateResponse | null>(null);
+
+  // Top-level Navigation View: "generator" | "resources"
+  const [appView, setAppView] = useState<"generator" | "resources">("generator");
 
   // Mode: "study" (Flashcards & Quiz) | "notes" (Revision Notes)
   const [generationMode, setGenerationMode] = useState<"study" | "notes">("study");
@@ -203,6 +207,7 @@ export default function StudyMateApp() {
       setSelectedAnswers({});
       setQuizFinished(false);
     }
+    setAppView("generator");
     setShowHistoryModal(false);
     setErrorMessage(null);
   };
@@ -567,6 +572,13 @@ export default function StudyMateApp() {
     setData(null);
   };
 
+  // Study an NCERT Chapter from the official library
+  const handleStudyNCERTChapter = (bookTitle: string, chapterTitle: string, chapterUrl: string) => {
+    setNotesText(`NCERT Study Material: ${bookTitle} — Chapter: ${chapterTitle}\nOfficial Source Link: ${chapterUrl}\n\nKey Concepts for StudyMate AI Analysis:\n- Study topics from this NCERT chapter.\n- Generate active recall flashcards, practice exam questions, or revision notes.`);
+    setAppView("generator");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   // Reset all to input new notes
   const handleReset = () => {
     setData(null);
@@ -581,6 +593,7 @@ export default function StudyMateApp() {
     setQuizFinished(false);
     setSamplePaperFile(null);
     setSamplePaperText("");
+    setAppView("generator");
     if (samplePaperInputRef.current) {
       samplePaperInputRef.current.value = "";
     }
@@ -660,6 +673,36 @@ export default function StudyMateApp() {
             </div>
           </div>
 
+          <div className="flex items-center space-x-1 sm:space-x-2">
+            <button
+              type="button"
+              onClick={() => setAppView("generator")}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                appView === "generator"
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200"
+              }`}
+            >
+              <span>⚡</span>
+              <span className="hidden sm:inline">AI Study</span>
+              <span>Generator</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAppView("resources")}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                appView === "resources"
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200"
+              }`}
+            >
+              <span>📚</span>
+              <span>Study Resources</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            </button>
+          </div>
+
           <div className="flex items-center space-x-2 sm:space-x-3">
             <button
               type="button"
@@ -672,7 +715,7 @@ export default function StudyMateApp() {
               title="Compress PDF tool"
             >
               <span className="text-amber-500 font-bold">⚡</span>
-              <span>Compress PDF</span>
+              <span className="hidden sm:inline">Compress PDF</span>
             </button>
 
             <button
@@ -707,7 +750,7 @@ export default function StudyMateApp() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8 sm:px-6">
+      <main className={`flex-1 w-full mx-auto px-4 py-8 sm:px-6 ${appView === "resources" ? "max-w-5xl" : "max-w-4xl"}`}>
         {/* Error notification banner */}
         {errorMessage && (
           <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start justify-between shadow-xs">
@@ -730,8 +773,14 @@ export default function StudyMateApp() {
           </div>
         )}
 
-        {/* View 1: Notes Input & Upload Section */}
-        {!data && !notesData && (
+        {appView === "resources" ? (
+          <div className="space-y-6 animate-fadeIn">
+            <NCERTLibrary onStudyChapter={handleStudyNCERTChapter} />
+          </div>
+        ) : (
+          <>
+            {/* View 1: Notes Input & Upload Section */}
+            {!data && !notesData && (
           <div className="space-y-6">
             {/* Branding Hero Banner */}
             <div className="text-center max-w-2xl mx-auto pt-2 pb-4">
@@ -1805,6 +1854,8 @@ export default function StudyMateApp() {
               </div>
             )}
           </div>
+        )}
+          </>
         )}
       </main>
 
