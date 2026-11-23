@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import MathText from "./components/MathText";
 import NCERTLibrary from "./components/NCERTLibrary";
+import ExamResources from "./components/ExamResources";
 
 interface Flashcard {
   front: string;
@@ -87,6 +88,7 @@ export default function StudyMateApp() {
 
   // Top-level Navigation View: "generator" | "resources"
   const [appView, setAppView] = useState<"generator" | "resources">("generator");
+  const [resourcesSubTab, setResourcesSubTab] = useState<"ncert" | "exams">("ncert");
 
   // Mode: "study" (Flashcards & Quiz) | "notes" (Revision Notes)
   const [generationMode, setGenerationMode] = useState<"study" | "notes">("study");
@@ -579,6 +581,16 @@ export default function StudyMateApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Prepare for a Competitive/Professional Exam from the reference directory
+  const handlePrepareExam = (examName: string, topics: string[], portalUrl: string) => {
+    const topicsFormatted = topics.map((t) => `- ${t}`).join("\n");
+    setNotesText(
+      `Competitive & Professional Exam Focus: ${examName}\nOfficial Examination Authority: ${portalUrl}\n\nKey Exam Domains & Syllabus Modules:\n${topicsFormatted}\n\nStudyMate Instructions:\n- Generate active recall flashcards, high-yield practice questions, or structured revision notes for these syllabus areas.\n- Emphasize fundamental principles, statutory definitions, key formulas, and high-probability exam concepts.`
+    );
+    setAppView("generator");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   // Reset all to input new notes
   const handleReset = () => {
     setData(null);
@@ -775,7 +787,49 @@ export default function StudyMateApp() {
 
         {appView === "resources" ? (
           <div className="space-y-6 animate-fadeIn">
-            <NCERTLibrary onStudyChapter={handleStudyNCERTChapter} />
+            {/* Resources Hub Sub-Navigation Switcher */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-2 sm:p-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setResourcesSubTab("ncert")}
+                  className={`p-3 sm:p-4 rounded-xl text-left transition-all cursor-pointer flex items-center space-x-3 ${
+                    resourcesSubTab === "ncert"
+                      ? "bg-indigo-50 border border-indigo-200 text-indigo-950 shadow-2xs"
+                      : "hover:bg-slate-50 text-slate-600 border border-transparent"
+                  }`}
+                >
+                  <span className="text-2xl shrink-0">🇮🇳</span>
+                  <div>
+                    <span className="font-bold text-xs sm:text-sm block">NCERT Books Library</span>
+                    <span className="text-[11px] text-slate-500 hidden sm:block">Classes 6–12 official government textbooks (ncert.nic.in)</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setResourcesSubTab("exams")}
+                  className={`p-3 sm:p-4 rounded-xl text-left transition-all cursor-pointer flex items-center space-x-3 ${
+                    resourcesSubTab === "exams"
+                      ? "bg-indigo-50 border border-indigo-200 text-indigo-950 shadow-2xs"
+                      : "hover:bg-slate-50 text-slate-600 border border-transparent"
+                  }`}
+                >
+                  <span className="text-2xl shrink-0">🎯</span>
+                  <div>
+                    <span className="font-bold text-xs sm:text-sm block">Competitive &amp; Professional Exams</span>
+                    <span className="text-[11px] text-slate-500 hidden sm:block">Curated official free sources: JEE, NEET, CA, ACCA, CS</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-tab view: NCERT Library vs Exam Resources */}
+            {resourcesSubTab === "ncert" ? (
+              <NCERTLibrary onStudyChapter={handleStudyNCERTChapter} />
+            ) : (
+              <ExamResources onPrepareExam={handlePrepareExam} />
+            )}
           </div>
         ) : (
           <>

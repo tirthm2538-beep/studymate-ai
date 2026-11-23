@@ -148,6 +148,22 @@
   - Integrated "⚡ Study with AI" action on every chapter that loads chapter context directly into the AI study generator with prefilled prompt instructions and smoothly transitions to generation mode.
   - Verified 100% of URLs point to official `ncert.nic.in` domains; verified clean production Next.js build.
 
+### Step 13: Curated Official Reference Resources for Competitive & Professional Exams
+- **Date**: 2026-11-23
+- **Status**: Complete & Tested
+  - Created structured reference dataset (`frontend/src/app/data/examResources.ts`) covering premier competitive and professional examinations:
+    - **CA (Chartered Accountancy)**: ICAI official BoS Knowledge Portal, Foundation/Intermediate/Final study modules, Revision Test Papers (RTPs), Mock Test Papers (MTPs), and question papers with suggested answers.
+    - **ACCA (Global Chartered Certified Accountant)**: ACCA Global official student support hub, Applied Knowledge & Skills study guides, Strategic Professional modules, free CBE Practice Platform, and Technical Articles.
+    - **CS (Company Secretary)**: ICSI official study material hub, CSEET reading material, Executive & Professional programme textbooks, and official Guideline Answers.
+    - **JEE (Main & Advanced)**: NTA JEE Main portal, JEE Advanced archive, official syllabi, and National Test Abhyas mock tests.
+    - **NEET (UG)**: NTA NEET official portal, National Medical Commission (NMC) statutory syllabus, past master question papers, and official mock tests.
+    - **UPSC Civil Services (CSE)**: UPSC official portal, Prelims & Mains examination syllabi, and multi-year question paper archive.
+    - **GATE & CLAT**: IIT GATE syllabus & question papers archive, NPTEL preparation portal, and Consortium of NLUs syllabus and model questions.
+  - Sourced 49 verified links directly to statutory governing and examination bodies (zero hosted copyrighted coaching material, mitigating all copyright and redistribution risks).
+  - Built interactive `ExamResources` component with category filters ("All", "Accounting & Finance", "Medical", "Engineering", "Civil & Legal"), live search, expandable resource drawers, direct link pills, and copyright integrity notices.
+  - Added "⚡ Study with AI" action allowing students to import exam domains directly into StudyMate AI for high-yield flashcard, quiz, or revision note generation.
+  - Linked both NCERT Books Library and Competitive Exam Resources under a cohesive "Study Resources" hub sub-navigation.
+
 ---
 
 #### Endpoint Reference: `POST /generate-notes`
