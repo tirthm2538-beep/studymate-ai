@@ -81,6 +81,30 @@ export default function StudyMateApp() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // PDF Compression state
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionStats, setCompressionStats] = useState<{
+    originalSize: number;
+    compressedSize: number;
+    reductionPercent: number;
+    downloadUrl: string | null;
+    filename: string;
+  } | null>(null);
+
+  // Standalone PDF Compressor Modal state
+  const [showCompressToolModal, setShowCompressToolModal] = useState(false);
+  const [standaloneCompressFile, setStandaloneCompressFile] = useState<File | null>(null);
+  const [isStandaloneCompressing, setIsStandaloneCompressing] = useState(false);
+  const [standaloneStats, setStandaloneStats] = useState<{
+    originalSize: number;
+    compressedSize: number;
+    reductionPercent: number;
+    downloadUrl: string | null;
+    filename: string;
+    blob: Blob;
+  } | null>(null);
+  const standaloneFileInputRef = useRef<HTMLInputElement>(null);
+
   // Load history from localStorage on initial render
   useEffect(() => {
     try {
@@ -157,21 +181,146 @@ export default function StudyMateApp() {
         setErrorMessage("Please select a valid PDF (.pdf) or text (.txt) file.");
         return;
       }
-      if (file.size > 25 * 1024 * 1024) {
-        setErrorMessage("File exceeds 25MB limit.");
+      if (file.size > 70 * 1024 * 1024) {
+        if (file.name.toLowerCase().endsWith(".pdf") && file.size <= 150 * 1024 * 1024) {
+          setSelectedFile(file);
+          setCompressionStats(null);
+          setErrorMessage(`Selected PDF is ${(file.size / (1024 * 1024)).toFixed(1)}MB, exceeding the 70MB upload limit. Click "⚡ Compress PDF" below to shrink it without leaving the site!`);
+          return;
+        }
+        setErrorMessage("File exceeds 70MB limit.");
         return;
       }
 
       setSelectedFile(file);
+      setCompressionStats(null);
       setErrorMessage(null);
     }
   };
 
   const removeFile = () => {
     setSelectedFile(null);
+    setCompressionStats(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  };
+
+  // Compress currently selected PDF file
+  const handleCompressSelectedFile = async () => {
+    if (!selectedFile || !selectedFile.name.toLowerCase().endsWith(".pdf")) return;
+    setIsCompressing(true);
+    setErrorMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("quality", "50");
+      formData.append("max_dimension", "1200");
+
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const cleanBaseUrl = apiBaseUrl.replace(/\/+$/, "");
+
+      const res = await fetch(`${cleanBaseUrl}/compress-pdf`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.detail || `Compression failed (${res.status})`);
+      }
+
+      const origHeader = parseInt(res.headers.get("X-Original-Size") || `${selectedFile.size}`, 10);
+      const compHeader = parseInt(res.headers.get("X-Compressed-Size") || "0", 10);
+      const reductionHeader = parseFloat(res.headers.get("X-Reduction-Percent") || "0");
+
+      const blob = await res.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const cleanBase = selectedFile.name.replace(/\.pdf$/i, "");
+      const newName = `${cleanBase}_compressed.pdf`;
+      const compressedFile = new File([blob], newName, { type: "application/pdf" });
+
+      setSelectedFile(compressedFile);
+      setCompressionStats({
+        originalSize: origHeader,
+        compressedSize: compHeader || blob.size,
+        reductionPercent: reductionHeader,
+        downloadUrl,
+        filename: newName,
+      });
+      setErrorMessage(null);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setErrorMessage(`PDF compression failed: ${err.message}`);
+      } else {
+        setErrorMessage("PDF compression failed. Please verify backend connection.");
+      }
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  // Standalone PDF Compressor Handler
+  const handleStandaloneCompress = async () => {
+    if (!standaloneCompressFile) return;
+    setIsStandaloneCompressing(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", standaloneCompressFile);
+      formData.append("quality", "50");
+      formData.append("max_dimension", "1200");
+
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const cleanBaseUrl = apiBaseUrl.replace(/\/+$/, "");
+
+      const res = await fetch(`${cleanBaseUrl}/compress-pdf`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.detail || `Compression failed (${res.status})`);
+      }
+
+      const origHeader = parseInt(res.headers.get("X-Original-Size") || `${standaloneCompressFile.size}`, 10);
+      const compHeader = parseInt(res.headers.get("X-Compressed-Size") || "0", 10);
+      const reductionHeader = parseFloat(res.headers.get("X-Reduction-Percent") || "0");
+
+      const blob = await res.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const cleanBase = standaloneCompressFile.name.replace(/\.pdf$/i, "");
+      const newName = `${cleanBase}_compressed.pdf`;
+
+      setStandaloneStats({
+        originalSize: origHeader,
+        compressedSize: compHeader || blob.size,
+        reductionPercent: reductionHeader,
+        downloadUrl,
+        filename: newName,
+        blob,
+      });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Compression failed. Please try again.");
+    } finally {
+      setIsStandaloneCompressing(false);
+    }
+  };
+
+  const handleUseStandaloneInStudyMate = () => {
+    if (!standaloneStats) return;
+    const file = new File([standaloneStats.blob], standaloneStats.filename, { type: "application/pdf" });
+    setSelectedFile(file);
+    setCompressionStats({
+      originalSize: standaloneStats.originalSize,
+      compressedSize: standaloneStats.compressedSize,
+      reductionPercent: standaloneStats.reductionPercent,
+      downloadUrl: standaloneStats.downloadUrl,
+      filename: standaloneStats.filename,
+    });
+    setShowCompressToolModal(false);
   };
 
   // Handle sample question paper selection
@@ -185,8 +334,8 @@ export default function StudyMateApp() {
         setErrorMessage("Sample paper must be a valid PDF (.pdf) or text (.txt) file.");
         return;
       }
-      if (file.size > 25 * 1024 * 1024) {
-        setErrorMessage("Sample paper exceeds 25MB limit.");
+      if (file.size > 70 * 1024 * 1024) {
+        setErrorMessage("Sample paper exceeds 70MB limit.");
         return;
       }
       setSamplePaperFile(file);
@@ -207,6 +356,11 @@ export default function StudyMateApp() {
 
     if (!notesText.trim() && !selectedFile) {
       setErrorMessage("Please enter your study notes or upload a PDF/TXT file.");
+      return;
+    }
+
+    if (selectedFile && selectedFile.size > 70 * 1024 * 1024) {
+      setErrorMessage(`Selected file is ${(selectedFile.size / (1024 * 1024)).toFixed(1)}MB. Please click "⚡ Compress PDF" above to shrink it under 70MB before generating.`);
       return;
     }
 
@@ -367,11 +521,25 @@ export default function StudyMateApp() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            <button
+              type="button"
+              onClick={() => {
+                setStandaloneCompressFile(null);
+                setStandaloneStats(null);
+                setShowCompressToolModal(true);
+              }}
+              className="text-xs sm:text-sm font-semibold text-slate-700 hover:text-indigo-600 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:border-indigo-300 transition-colors bg-white hover:bg-indigo-50/50 cursor-pointer flex items-center space-x-1.5 shadow-xs"
+              title="Compress PDF tool"
+            >
+              <span className="text-amber-500 font-bold">⚡</span>
+              <span>Compress PDF</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowHistoryModal(true)}
-              className="text-xs sm:text-sm font-semibold text-slate-700 hover:text-indigo-600 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-indigo-300 transition-colors bg-white hover:bg-indigo-50/50 cursor-pointer flex items-center space-x-1.5 shadow-xs"
+              className="text-xs sm:text-sm font-semibold text-slate-700 hover:text-indigo-600 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:border-indigo-300 transition-colors bg-white hover:bg-indigo-50/50 cursor-pointer flex items-center space-x-1.5 shadow-xs"
             >
               <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -504,27 +672,90 @@ export default function StudyMateApp() {
                     <span className="text-sm font-medium text-slate-700 group-hover:text-indigo-600">
                       Click to upload notes document
                     </span>
-                    <span className="text-xs text-slate-500 mt-1">Supports PDF or TXT up to 25MB</span>
+                    <span className="text-xs text-slate-500 mt-1">Supports PDF or TXT up to 70MB (with optional PDF Compression)</span>
                   </label>
                 ) : (
-                  <div className="flex items-center justify-between p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl">
-                    <div className="flex items-center space-x-3 truncate">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold uppercase shrink-0">
-                        {selectedFile.name.endsWith(".pdf") ? "PDF" : "TXT"}
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl gap-2">
+                      <div className="flex items-center space-x-3 truncate">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold uppercase shrink-0">
+                          {selectedFile.name.endsWith(".pdf") ? "PDF" : "TXT"}
+                        </div>
+                        <div className="truncate">
+                          <p className="text-sm font-medium text-slate-800 truncate">{selectedFile.name}</p>
+                          <p className="text-xs text-slate-500">
+                            {selectedFile.size > 1024 * 1024
+                              ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`
+                              : `${(selectedFile.size / 1024).toFixed(1)} KB`}
+                          </p>
+                        </div>
                       </div>
-                      <div className="truncate">
-                        <p className="text-sm font-medium text-slate-800 truncate">{selectedFile.name}</p>
-                        <p className="text-xs text-slate-500">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        {selectedFile.name.toLowerCase().endsWith(".pdf") && (
+                          <button
+                            type="button"
+                            onClick={handleCompressSelectedFile}
+                            disabled={isCompressing || isLoading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white transition-all cursor-pointer flex items-center space-x-1.5 disabled:opacity-50 shadow-xs"
+                            title="Compress and reduce size of this PDF"
+                          >
+                            {isCompressing ? (
+                              <>
+                                <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span>Compressing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>⚡ Compress PDF</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={removeFile}
+                          disabled={isLoading || isCompressing}
+                          className="text-xs text-red-600 hover:text-red-800 font-semibold px-2 py-1 rounded-md hover:bg-red-100 transition-colors cursor-pointer"
+                        >
+                          Remove
+                        </button>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={removeFile}
-                      disabled={isLoading}
-                      className="text-xs text-red-600 hover:text-red-800 font-semibold px-2 py-1 rounded-md hover:bg-red-100 transition-colors ml-2 cursor-pointer"
-                    >
-                      Remove
-                    </button>
+
+                    {/* Compression result pill */}
+                    {compressionStats && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs animate-fadeIn">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-base">🎉</span>
+                          <div>
+                            <span className="font-semibold">Compressed: </span>
+                            <span>
+                              {(compressionStats.originalSize / (1024 * 1024)).toFixed(1)} MB &rarr;{" "}
+                              {(compressionStats.compressedSize / (1024 * 1024)).toFixed(1)} MB{" "}
+                              <span className="font-bold text-emerald-700">({compressionStats.reductionPercent}% saved)</span>
+                            </span>
+                            <span className="text-[11px] text-emerald-600 block sm:inline sm:ml-2">
+                              • Auto-selected for study generation
+                            </span>
+                          </div>
+                        </div>
+                        {compressionStats.downloadUrl && (
+                          <a
+                            href={compressionStats.downloadUrl}
+                            download={compressionStats.filename}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold text-xs transition-colors shrink-0 shadow-xs"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span>Download PDF</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -631,7 +862,7 @@ export default function StudyMateApp() {
                           <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                           </svg>
-                          <span>Upload Sample Paper (PDF or TXT up to 25MB)</span>
+                          <span>Upload Sample Paper (PDF or TXT up to 70MB)</span>
                         </label>
                       ) : (
                         <div className="flex items-center justify-between p-2.5 bg-indigo-50/60 border border-indigo-200 rounded-lg text-xs">
@@ -713,7 +944,7 @@ export default function StudyMateApp() {
                   ⚡
                 </div>
                 <h3 className="font-semibold text-slate-900 text-sm">Instant Processing</h3>
-                <p className="text-xs text-slate-500 mt-1">Upload lecture slides, summaries, or syllabi up to 25MB.</p>
+                <p className="text-xs text-slate-500 mt-1">Upload lecture slides, summaries, or syllabi up to 70MB.</p>
               </div>
             </div>
 
@@ -1263,6 +1494,159 @@ export default function StudyMateApp() {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Standalone PDF Compressor Tool Modal */}
+      {showCompressToolModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center space-x-2">
+                <span className="text-lg">⚡</span>
+                <h3 className="font-bold text-slate-900 text-base">PDF Compressor Tool</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCompressToolModal(false)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-xl leading-none cursor-pointer p-1"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Shrink image-heavy lecture slides, chapters, or textbook PDFs up to 150MB. Compression downsamples high-resolution figures and compresses internal streams without leaving the page.
+              </p>
+
+              <input
+                ref={standaloneFileInputRef}
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                id="standalone-compress-input"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    const f = e.target.files[0];
+                    if (!f.name.toLowerCase().endsWith(".pdf")) {
+                      alert("Please select a PDF file.");
+                      return;
+                    }
+                    if (f.size > 150 * 1024 * 1024) {
+                      alert("File exceeds maximum compression limit of 150MB.");
+                      return;
+                    }
+                    setStandaloneCompressFile(f);
+                    setStandaloneStats(null);
+                  }
+                }}
+              />
+
+              {!standaloneCompressFile ? (
+                <label
+                  htmlFor="standalone-compress-input"
+                  className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-xl p-8 cursor-pointer bg-slate-50 hover:bg-indigo-50/30 transition-all text-center group"
+                >
+                  <div className="w-12 h-12 rounded-full bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center text-indigo-600 mb-2 transition-colors">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  </div>
+                  <span className="text-sm font-semibold text-slate-800 group-hover:text-indigo-600">
+                    Select a PDF to compress
+                  </span>
+                  <span className="text-xs text-slate-500 mt-1">Accepts PDFs up to 150MB</span>
+                </label>
+              ) : (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="truncate pr-2">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{standaloneCompressFile.name}</p>
+                      <p className="text-xs text-slate-500">
+                        Original size: {(standaloneCompressFile.size / (1024 * 1024)).toFixed(2)} MB
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStandaloneCompressFile(null);
+                        setStandaloneStats(null);
+                        if (standaloneFileInputRef.current) standaloneFileInputRef.current.value = "";
+                      }}
+                      className="text-xs text-slate-400 hover:text-red-600 cursor-pointer"
+                    >
+                      Change
+                    </button>
+                  </div>
+
+                  {!standaloneStats ? (
+                    <button
+                      type="button"
+                      onClick={handleStandaloneCompress}
+                      disabled={isStandaloneCompressing}
+                      className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm transition-all cursor-pointer flex items-center justify-center space-x-2 shadow-xs disabled:opacity-50"
+                    >
+                      {isStandaloneCompressing ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span>Compressing PDF...</span>
+                        </>
+                      ) : (
+                        <span>⚡ Compress Now</span>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+                      <div className="flex items-center space-x-2 text-emerald-800 text-xs">
+                        <span className="text-base">🎉</span>
+                        <div>
+                          <p className="font-bold">Compression Complete!</p>
+                          <p className="text-[11px] text-emerald-700">
+                            {(standaloneStats.originalSize / (1024 * 1024)).toFixed(2)} MB &rarr;{" "}
+                            {(standaloneStats.compressedSize / (1024 * 1024)).toFixed(2)} MB{" "}
+                            <span className="font-bold">({standaloneStats.reductionPercent}% saved)</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        {standaloneStats.downloadUrl && (
+                          <a
+                            href={standaloneStats.downloadUrl}
+                            download={standaloneStats.filename}
+                            className="py-2 px-3 text-center bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+                          >
+                            📥 Download PDF
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleUseStandaloneInStudyMate}
+                          className="py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                        >
+                          ✨ Use in StudyMate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowCompressToolModal(false)}
+                className="px-4 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold text-slate-700 hover:bg-slate-100 text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

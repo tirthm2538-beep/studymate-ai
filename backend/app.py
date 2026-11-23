@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, status
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Dict, Any
 import io
@@ -6,6 +6,8 @@ import json
 import os
 import re
 import pypdf
+import pikepdf
+from PIL import Image
 import google.generativeai as genai
 from dotenv import load_dotenv
 
@@ -24,9 +26,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Original-Size", "X-Compressed-Size", "X-Reduction-Percent"],
 )
 
-MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB limit
+MAX_FILE_SIZE = 70 * 1024 * 1024  # 70 MB limit for notes and question papers
+MAX_COMPRESS_FILE_SIZE = 150 * 1024 * 1024  # 150 MB limit for standalone compression tool
 MAX_PROMPT_CHARS = 30000  # Threshold for chunked summarization
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-3.5-flash-lite")
 
@@ -247,6 +251,117 @@ def get_gemini_client():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+def compress_pdf_bytes(file_bytes: bytes, quality: int = 50, max_dimension: int = 1200) -> tuple[bytes, int, int, float]:
+    """
+    Compresses PDF streams and re-encodes / downsamples high-resolution images using pikepdf and Pillow.
+    Returns: (compressed_bytes, original_size, compressed_size, reduction_percent)
+    """
+    original_size = len(file_bytes)
+    try:
+        pdf = pikepdf.Pdf.open(io.BytesIO(file_bytes))
+        for page in pdf.pages:
+            if "/Resources" in page and "/XObject" in page.Resources:
+                for name, obj in list(page.Resources.XObject.items()):
+                    if isinstance(obj, pikepdf.Stream) and obj.get("/Subtype") == pikepdf.Name.Image:
+                        try:
+                            pdfimage = pikepdf.PdfImage(obj)
+                            pil_im = pdfimage.as_pil_image()
+
+                            # Downsample if image exceeds max dimension
+                            if max(pil_im.size) > max_dimension:
+                                pil_im.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+
+                            # Handle RGBA / transparency for clean JPEG compression
+                            if pil_im.mode in ("RGBA", "LA"):
+                                bg = Image.new("RGB", pil_im.size, (255, 255, 255))
+                                bg.paste(pil_im, mask=pil_im.split()[-1])
+                                pil_im = bg
+                            elif pil_im.mode != "RGB":
+                                pil_im = pil_im.convert("RGB")
+
+                            comp_buf = io.BytesIO()
+                            pil_im.save(comp_buf, format="JPEG", quality=quality, optimize=True)
+                            comp_img_bytes = comp_buf.getvalue()
+
+                            # Only replace stream if the compressed image is smaller
+                            raw_stream_len = len(obj.read_raw_bytes())
+                            if len(comp_img_bytes) < raw_stream_len:
+                                new_stream = pdf.make_stream(comp_img_bytes)
+                                new_stream.Subtype = pikepdf.Name.Image
+                                new_stream.Width = pil_im.width
+                                new_stream.Height = pil_im.height
+                                new_stream.ColorSpace = pikepdf.Name.DeviceRGB
+                                new_stream.BitsPerComponent = 8
+                                new_stream.Filter = pikepdf.Name.DCTDecode
+                                page.Resources.XObject[name] = new_stream
+                        except Exception:
+                            continue
+
+        out_buf = io.BytesIO()
+        pdf.save(out_buf, compress_streams=True, object_stream_mode=pikepdf.ObjectStreamMode.generate)
+        compressed_bytes = out_buf.getvalue()
+    except Exception:
+        # Fallback to original bytes safely if any unexpected parsing error occurs
+        return file_bytes, original_size, original_size, 0.0
+
+    if len(compressed_bytes) < original_size:
+        compressed_size = len(compressed_bytes)
+        reduction = round((1.0 - compressed_size / original_size) * 100, 1)
+        return compressed_bytes, original_size, compressed_size, reduction
+
+    return file_bytes, original_size, original_size, 0.0
+
+@app.post("/compress-pdf")
+async def compress_pdf_endpoint(
+    file: UploadFile = File(...),
+    quality: Optional[int] = Form(50),
+    max_dimension: Optional[int] = Form(1200)
+):
+    """
+    Accepts a PDF file (up to 150MB), compresses streams and downsamples images,
+    and returns the compressed PDF with size and savings metadata headers.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF (.pdf) files can be compressed."
+        )
+
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_COMPRESS_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum compression limit of {MAX_COMPRESS_FILE_SIZE // (1024 * 1024)}MB."
+        )
+
+    if len(file_bytes) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded PDF file is empty."
+        )
+
+    # Validate quality & dimension bounds
+    clamped_quality = max(20, min(quality or 50, 90))
+    clamped_dim = max(600, min(max_dimension or 1200, 2400))
+
+    comp_bytes, orig_sz, comp_sz, reduction = compress_pdf_bytes(
+        file_bytes, quality=clamped_quality, max_dimension=clamped_dim
+    )
+
+    base_name = os.path.splitext(os.path.basename(file.filename))[0]
+    safe_filename = re.sub(r"[^\w\-_\.]", "_", base_name) + "_compressed.pdf"
+
+    return Response(
+        content=comp_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "X-Original-Size": str(orig_sz),
+            "X-Compressed-Size": str(comp_sz),
+            "X-Reduction-Percent": str(reduction)
+        }
+    )
 
 @app.post("/generate")
 async def generate(

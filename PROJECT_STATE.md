@@ -18,6 +18,7 @@
   - Google Generative AI SDK (`google-generativeai` with `gemini-3.5-flash-lite`, REST transport)
   - `python-dotenv`, `python-multipart`
   - `pypdf` (PDF text extraction)
+  - `pikepdf` & `Pillow` (PDF stream & high-resolution image compression)
   - Hosted on **Render** (Free Tier Web Service)
 - **Frontend**:
   - Next.js 16 (App Router)
@@ -116,15 +117,37 @@
   - Added prominent "Exam Format Matched" indicator on the Quiz tab.
   - Tested with a multi-assertion reference exam paper with 5/5 questions matching the reference paper style.
 
+### Step 10: 70MB PDF Upload Limit & Built-In PDF Compression
+- **Date**: 2026-11-23
+- **Status**: Complete & Tested
+  - Raised maximum PDF and TXT file upload size limit from 25MB to 70MB across backend validation and frontend client controls.
+  - Added built-in PDF Compression engine powered by `pikepdf` and `Pillow`, supporting stream optimization, unreferenced object pruning, and intelligent high-resolution image downsampling & JPEG recompression.
+  - Implemented `POST /compress-pdf` endpoint accepting files up to 150MB, returning optimized PDF streams and savings metadata headers (`X-Original-Size`, `X-Compressed-Size`, `X-Reduction-Percent`).
+  - Added optional "⚡ Compress PDF" action right in the document upload card so users can compress large files before generation, auto-selecting the compressed version for StudyMate and providing an instant download option.
+  - Added a dedicated standalone "PDF Compressor Tool" modal accessible from the top navigation bar to shrink files up to 150MB without leaving the site.
+  - Verified with real multi-page heavy-image test PDF achieving over 91% file size reduction.
+
 ---
+
+#### Endpoint Reference: `POST /compress-pdf`
+- **Request Content-Type**: `multipart/form-data`
+- **Input Parameters**:
+  - `file` (binary, required): PDF document (up to 150MB).
+  - `quality` (int, optional, default: 50): Target JPEG image quality (20-90).
+  - `max_dimension` (int, optional, default: 1200): Maximum pixel width/height for downsampled figures.
+- **Response Format**: Binary `application/pdf` with response headers:
+  - `Content-Disposition`: `attachment; filename="<original_name>_compressed.pdf"`
+  - `X-Original-Size`: Original byte size.
+  - `X-Compressed-Size`: Compressed byte size.
+  - `X-Reduction-Percent`: Calculated percentage saved.
 
 #### Endpoint Reference: `POST /generate`
 - **Request Content-Type**: `multipart/form-data` OR `application/json`
 - **Input Parameters**:
   - `text` (string, optional): Pasted study notes.
-  - `file` (binary, optional): Uploaded `.pdf` or `.txt` file (max 25MB).
+  - `file` (binary, optional): Uploaded `.pdf` or `.txt` file (max 70MB).
   - `difficulty` (string, optional): "Easy", "Medium", or "Hard" (default: "Medium").
-  - `sample_paper_file` (binary, optional): Uploaded sample question paper (.pdf or .txt, max 25MB).
+  - `sample_paper_file` (binary, optional): Uploaded sample question paper (.pdf or .txt, max 70MB).
   - `sample_paper_text` (string, optional): Pasted sample question paper text.
 - **Response Format (`application/json`)**:
   ```json
