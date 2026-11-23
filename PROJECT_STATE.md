@@ -127,7 +127,70 @@
   - Added a dedicated standalone "PDF Compressor Tool" modal accessible from the top navigation bar to shrink files up to 150MB without leaving the site.
   - Verified with real multi-page heavy-image test PDF achieving over 91% file size reduction.
 
+### Step 11: PDF-to-Notes Feature (Structured Revision Notes Engine)
+- **Date**: 2026-11-23
+- **Status**: Complete & Tested
+  - Added a dedicated "Revision Notes" mode alongside "Flashcards & Quiz" on the input screen.
+  - Implemented `POST /generate-notes` endpoint in `backend/app.py` capable of processing single excerpts or long chapter-sized documents (e.g. 100 pages) via intelligent paragraph and page-boundary chunking.
+  - Generates comprehensive revision notes organized by major headings and subheadings, comprehensive bullet points, highlighted key definition callout blocks (`{"term": "...", "definition": "..."}`), and a high-yield "Quick Revision Summary" at the end.
+  - Integrated `POST /export-notes-pdf` endpoint utilizing ReportLab to generate publication-grade, styled revision notes PDF documents with margins, callout tables, and clean typography.
+  - Built interactive revision notes UI with section jump pills, one-click "Copy as Text" (clipboard copy), "Download as PDF", and a seamless "Turn into Flashcards" bridge.
+  - Added browser localStorage history persistence for revision notes sessions.
+  - Verified with comprehensive biological and organic chemistry test suites.
+
 ---
+
+#### Endpoint Reference: `POST /generate-notes`
+- **Request Content-Type**: `multipart/form-data` OR `application/json`
+- **Input Parameters**:
+  - `file` (binary, optional): PDF or TXT chapter document (max 70MB).
+  - `text` (string, optional): Pasted study notes or chapter text.
+  - `title` (string, optional): Custom title for document.
+  - `difficulty` (string, optional): "Easy", "Medium", or "Hard" (default: "Medium").
+- **Response Format (`application/json`)**:
+  ```json
+  {
+    "status": "success",
+    "document_title": "Chapter 5: Cell Membrane Transport",
+    "notes_length": 1845,
+    "difficulty": "Medium",
+    "sections_count": 3,
+    "sections": [
+      {
+        "heading": "Section 1: Membrane Architecture",
+        "subheadings": [
+          {
+            "title": "Fluid Mosaic Model",
+            "bullets": ["Bilayers are amphipathic...", "Integral proteins drift laterally..."],
+            "key_definitions": [
+              {
+                "term": "Fluid Mosaic Model",
+                "definition": "Structural model describing the plasma membrane..."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "quick_revision_summary": [
+      "Core takeaway 1...",
+      "Core takeaway 2..."
+    ],
+    "all_key_definitions": [
+      {"term": "...", "definition": "..."}
+    ],
+    "markdown_content": "# Full Markdown formatted document..."
+  }
+  ```
+
+#### Endpoint Reference: `POST /export-notes-pdf`
+- **Request Content-Type**: `application/json`
+- **Input Parameters**:
+  - `title` (string): Title of document.
+  - `sections` (array): Structured sections with headings, subheadings, bullets, and key definitions.
+  - `quick_revision_summary` (array): Array of summary takeaways.
+  - `difficulty` (string, optional): Difficulty level.
+- **Response Format**: Binary `application/pdf` with `Content-Disposition: attachment; filename="<title>_Revision_Notes.pdf"`
 
 #### Endpoint Reference: `POST /compress-pdf`
 - **Request Content-Type**: `multipart/form-data`

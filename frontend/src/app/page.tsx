@@ -25,12 +25,42 @@ interface GenerateResponse {
   quiz: QuizQuestion[];
 }
 
+interface KeyDefinition {
+  term: string;
+  definition: string;
+}
+
+interface NoteSubheading {
+  title: string;
+  bullets: string[];
+  key_definitions?: KeyDefinition[];
+}
+
+interface NoteSection {
+  heading: string;
+  subheadings: NoteSubheading[];
+}
+
+interface NotesResponse {
+  status: string;
+  document_title: string;
+  notes_length: number;
+  difficulty?: string;
+  sections_count: number;
+  sections: NoteSection[];
+  quick_revision_summary: string[];
+  all_key_definitions?: KeyDefinition[];
+  markdown_content?: string;
+}
+
 interface HistoryItem {
   id: string;
   timestamp: number;
   title: string;
   notesLength: number;
-  data: GenerateResponse;
+  mode?: "study" | "notes";
+  data?: GenerateResponse;
+  notesData?: NotesResponse;
 }
 
 const SAMPLE_NOTES = `Cellular Respiration and Photosynthesis:
@@ -53,6 +83,12 @@ export default function StudyMateApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [data, setData] = useState<GenerateResponse | null>(null);
+
+  // Mode: "study" (Flashcards & Quiz) | "notes" (Revision Notes)
+  const [generationMode, setGenerationMode] = useState<"study" | "notes">("study");
+  const [notesData, setNotesData] = useState<NotesResponse | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   // Active view tab
   const [activeTab, setActiveTab] = useState<"flashcards" | "quiz">("flashcards");
@@ -154,13 +190,19 @@ export default function StudyMateApp() {
   };
 
   const openHistoryRecord = (item: HistoryItem) => {
-    setData(item.data);
-    setActiveTab("flashcards");
-    setCurrentCardIndex(0);
-    setIsFlipped(false);
-    setCurrentQuizIndex(0);
-    setSelectedAnswers({});
-    setQuizFinished(false);
+    if (item.mode === "notes" && item.notesData) {
+      setNotesData(item.notesData);
+      setData(null);
+    } else if (item.data) {
+      setData(item.data);
+      setNotesData(null);
+      setActiveTab("flashcards");
+      setCurrentCardIndex(0);
+      setIsFlipped(false);
+      setCurrentQuizIndex(0);
+      setSelectedAnswers({});
+      setQuizFinished(false);
+    }
     setShowHistoryModal(false);
     setErrorMessage(null);
   };
@@ -367,6 +409,47 @@ export default function StudyMateApp() {
     setIsLoading(true);
 
     try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const cleanBaseUrl = apiBaseUrl.replace(/\/+$/, "");
+
+      // Handle PDF-to-Notes mode
+      if (generationMode === "notes") {
+        const formData = new FormData();
+        if (notesText.trim()) {
+          formData.append("text", notesText.trim());
+        }
+        if (selectedFile) {
+          formData.append("file", selectedFile);
+        }
+        formData.append("difficulty", difficulty);
+
+        const res = await fetch(`${cleanBaseUrl}/generate-notes`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => null);
+          const detail = errorData?.detail || `Server error (${res.status})`;
+          throw new Error(detail);
+        }
+
+        const responseData: NotesResponse = await res.json();
+        setNotesData(responseData);
+        setData(null);
+
+        saveHistoryRecord({
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+          title: `📖 ${responseData.document_title}`,
+          notesLength: responseData.notes_length,
+          mode: "notes",
+          notesData: responseData,
+        });
+        return;
+      }
+
+      // Handle Flashcards & Quiz mode
       const formData = new FormData();
       if (notesText.trim()) {
         formData.append("text", notesText.trim());
@@ -382,9 +465,6 @@ export default function StudyMateApp() {
         formData.append("sample_paper_text", samplePaperText.trim());
       }
 
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-      const cleanBaseUrl = apiBaseUrl.replace(/\/+$/, "");
-
       const res = await fetch(`${cleanBaseUrl}/generate`, {
         method: "POST",
         body: formData,
@@ -398,6 +478,7 @@ export default function StudyMateApp() {
 
       const responseData: GenerateResponse = await res.json();
       setData(responseData);
+      setNotesData(null);
 
       // Save lightweight record to browser's localStorage (purely client-side)
       const snippet = notesText.trim()
@@ -407,8 +488,9 @@ export default function StudyMateApp() {
       saveHistoryRecord({
         id: Date.now().toString(),
         timestamp: Date.now(),
-        title: snippet,
+        title: `🗂️ ${snippet}`,
         notesLength: responseData.notes_length,
+        mode: "study",
         data: responseData,
       });
 
@@ -429,9 +511,66 @@ export default function StudyMateApp() {
     }
   };
 
+  // Download Notes as PDF via backend ReportLab service
+  const handleDownloadNotesPdf = async () => {
+    if (!notesData) return;
+    setIsExportingPdf(true);
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const cleanBaseUrl = apiBaseUrl.replace(/\/+$/, "");
+      const res = await fetch(`${cleanBaseUrl}/export-notes-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: notesData.document_title,
+          sections: notesData.sections,
+          quick_revision_summary: notesData.quick_revision_summary,
+          difficulty: notesData.difficulty || difficulty,
+        }),
+      });
+      if (!res.ok) throw new Error("PDF export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${notesData.document_title.replace(/[^\w\-_\.]/g, "_")}_Revision_Notes.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      window.print();
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  // Copy full notes markdown / text to clipboard
+  const handleCopyNotesText = async () => {
+    if (!notesData) return;
+    const content = notesData.markdown_content || "";
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 2500);
+    } catch {
+      alert("Failed to copy to clipboard.");
+    }
+  };
+
+  // Turn generated revision notes into flashcards and quiz
+  const handleConvertNotesToFlashcards = () => {
+    if (!notesData) return;
+    setNotesText(notesData.markdown_content || "");
+    setNotesData(null);
+    setGenerationMode("study");
+    setData(null);
+  };
+
   // Reset all to input new notes
   const handleReset = () => {
     setData(null);
+    setNotesData(null);
     setNotesText("");
     setSelectedFile(null);
     setErrorMessage(null);
@@ -552,7 +691,7 @@ export default function StudyMateApp() {
               )}
             </button>
 
-            {data && (
+            {(data || notesData) && (
               <button
                 onClick={handleReset}
                 className="text-xs sm:text-sm font-semibold text-slate-700 hover:text-indigo-600 px-3.5 py-1.5 rounded-lg border border-slate-200 hover:border-indigo-300 transition-colors bg-white hover:bg-indigo-50/50 cursor-pointer flex items-center space-x-1.5"
@@ -560,7 +699,7 @@ export default function StudyMateApp() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span>Generate New Set</span>
+                <span>New Session</span>
               </button>
             )}
           </div>
@@ -592,7 +731,7 @@ export default function StudyMateApp() {
         )}
 
         {/* View 1: Notes Input & Upload Section */}
-        {!data && (
+        {!data && !notesData && (
           <div className="space-y-6">
             {/* Branding Hero Banner */}
             <div className="text-center max-w-2xl mx-auto pt-2 pb-4">
@@ -604,8 +743,45 @@ export default function StudyMateApp() {
                 Study smarter, not harder with <span className="text-indigo-600">StudyMate AI</span>
               </h1>
               <p className="mt-3 text-slate-600 text-sm sm:text-base leading-relaxed">
-                Transform your lecture notes, summaries, or textbook PDFs into high-yield flashcards and practice quizzes in seconds.
+                Transform lecture notes, textbook chapters, or PDFs into interactive flashcards, practice quizzes, or comprehensive revision notes.
               </p>
+            </div>
+
+            {/* Mode Selector Toggle: Flashcards & Quiz vs Revision Notes */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-2 sm:p-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGenerationMode("study")}
+                  className={`p-3 sm:p-4 rounded-xl text-left transition-all cursor-pointer flex items-center space-x-3 ${
+                    generationMode === "study"
+                      ? "bg-indigo-50 border border-indigo-200 text-indigo-950 shadow-2xs"
+                      : "hover:bg-slate-50 text-slate-600 border border-transparent"
+                  }`}
+                >
+                  <span className="text-2xl shrink-0">🗂️</span>
+                  <div>
+                    <span className="font-bold text-xs sm:text-sm block">Flashcards & Quiz</span>
+                    <span className="text-[11px] text-slate-500 hidden sm:block">Active recall cards & 5-question practice quiz</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGenerationMode("notes")}
+                  className={`p-3 sm:p-4 rounded-xl text-left transition-all cursor-pointer flex items-center space-x-3 ${
+                    generationMode === "notes"
+                      ? "bg-indigo-50 border border-indigo-200 text-indigo-950 shadow-2xs"
+                      : "hover:bg-slate-50 text-slate-600 border border-transparent"
+                  }`}
+                >
+                  <span className="text-2xl shrink-0">📖</span>
+                  <div>
+                    <span className="font-bold text-xs sm:text-sm block">Revision Notes Mode</span>
+                    <span className="text-[11px] text-slate-500 hidden sm:block">Headings, definitions & quick revision sheet</span>
+                  </div>
+                </button>
+              </div>
             </div>
 
             {/* Input Form Card */}
@@ -912,10 +1088,18 @@ export default function StudyMateApp() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      <span>Analyzing notes & generating study set...</span>
+                      <span>
+                        {generationMode === "notes"
+                          ? "Analyzing chapter & drafting comprehensive revision notes..."
+                          : "Analyzing notes & generating study set..."}
+                      </span>
                     </>
                   ) : (
-                    <span>Generate Flashcards & Quiz</span>
+                    <span>
+                      {generationMode === "notes"
+                        ? "📖 Generate Comprehensive Revision Notes"
+                        : "Generate Flashcards & Quiz"}
+                    </span>
                   )}
                 </button>
               </div>
@@ -1001,9 +1185,15 @@ export default function StudyMateApp() {
                       </div>
 
                       <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
-                        <span className="font-medium text-indigo-700">
-                          {item.data.flashcards.length} cards &bull; {item.data.quiz.length} questions
-                        </span>
+                        {item.mode === "notes" && item.notesData ? (
+                          <span className="font-medium text-emerald-700">
+                            📖 {item.notesData.sections.length} sections &bull; {item.notesData.all_key_definitions?.length || 0} terms
+                          </span>
+                        ) : (
+                          <span className="font-medium text-indigo-700">
+                            🗂️ {item.data?.flashcards.length || 0} cards &bull; {item.data?.quiz.length || 0} questions
+                          </span>
+                        )}
                         <span className="text-indigo-600 font-semibold group-hover:underline flex items-center space-x-1">
                           <span>Reopen</span>
                           <span>&rarr;</span>
@@ -1027,6 +1217,249 @@ export default function StudyMateApp() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* View 3: Comprehensive Revision Notes */}
+        {notesData && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Document Header & Quick Actions Bar */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center space-x-2 mb-1.5">
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/70 text-indigo-700 text-xs font-bold uppercase tracking-wide">
+                      📖 Revision Notes
+                    </span>
+                    {notesData.difficulty && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                        {notesData.difficulty} Mode
+                      </span>
+                    )}
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                    {notesData.document_title}
+                  </h1>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {notesData.sections.length} Major {notesData.sections.length === 1 ? "Section" : "Sections"} &bull; {notesData.all_key_definitions?.length || 0} Key Definitions Highlighted
+                  </p>
+                </div>
+
+                {/* Quick Actions: Copy as Text, Download PDF, Turn into Flashcards */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyNotesText}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold transition-all shadow-2xs flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    {copyFeedback ? (
+                      <>
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span className="text-emerald-700 font-bold">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <span>Copy as Text</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadNotesPdf}
+                    disabled={isExportingPdf}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs sm:text-sm font-semibold transition-all shadow-xs flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isExportingPdf ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Building PDF...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        <span>Download as PDF</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleConvertNotesToFlashcards}
+                    className="px-3.5 py-2 rounded-xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100/70 text-indigo-700 text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center space-x-1.5"
+                    title="Convert these notes into flashcards and quizzes"
+                  >
+                    <span>🗂️</span>
+                    <span className="hidden sm:inline">Turn into</span>
+                    <span>Flashcards</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick jump navigation pills */}
+              <div className="flex items-center space-x-2 overflow-x-auto pb-1 text-xs">
+                <span className="text-slate-400 font-semibold shrink-0">Jump to:</span>
+                {notesData.sections.map((sec, idx) => (
+                  <a
+                    key={idx}
+                    href={`#section-${idx}`}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-medium shrink-0 transition-colors"
+                  >
+                    {sec.heading.length > 25 ? sec.heading.slice(0, 25) + "..." : sec.heading}
+                  </a>
+                ))}
+                {notesData.quick_revision_summary.length > 0 && (
+                  <a
+                    href="#quick-revision-summary"
+                    className="px-2.5 py-1 rounded-lg bg-amber-100/80 hover:bg-amber-200/80 text-amber-900 font-semibold shrink-0 transition-colors"
+                  >
+                    ⚡ Quick Summary
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Sections Content List */}
+            <div className="space-y-6">
+              {notesData.sections.map((sec, sIdx) => (
+                <div
+                  key={sIdx}
+                  id={`section-${sIdx}`}
+                  className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6 scroll-mt-20"
+                >
+                  {/* Section Heading */}
+                  <div className="flex items-center space-x-3 border-b border-slate-100 pb-3">
+                    <span className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-2xs">
+                      {sIdx + 1}
+                    </span>
+                    <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                      {sec.heading}
+                    </h2>
+                  </div>
+
+                  {/* Subheadings */}
+                  <div className="space-y-6">
+                    {sec.subheadings.map((sub, subIdx) => (
+                      <div key={subIdx} className="space-y-3">
+                        {sub.title && (
+                          <h3 className="text-base sm:text-lg font-bold text-indigo-950 flex items-center space-x-2">
+                            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                            <span>{sub.title}</span>
+                          </h3>
+                        )}
+
+                        {/* Bullet Points */}
+                        <ul className="space-y-2 pl-3">
+                          {sub.bullets.map((b, bIdx) => (
+                            <li
+                              key={bIdx}
+                              className="flex items-start space-x-2.5 text-slate-700 text-sm leading-relaxed"
+                            >
+                              <span className="text-indigo-400 font-bold shrink-0 mt-0.5">•</span>
+                              <div className="flex-1">
+                                <MathText content={b} />
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+
+                        {/* Highlighted Key Definitions Callout Cards */}
+                        {sub.key_definitions && sub.key_definitions.length > 0 && (
+                          <div className="mt-3 space-y-2 pt-1">
+                            {sub.key_definitions.map((def, dIdx) => (
+                              <div
+                                key={dIdx}
+                                className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50/40 to-white border border-emerald-200/80 shadow-2xs text-xs sm:text-sm text-emerald-950 flex items-start space-x-2.5"
+                              >
+                                <span className="text-base shrink-0 mt-0.5">📌</span>
+                                <div className="leading-relaxed">
+                                  <span className="font-extrabold text-emerald-900 bg-emerald-100/90 px-1.5 py-0.5 rounded-md border border-emerald-200 mr-2">
+                                    {def.term}
+                                  </span>
+                                  <MathText content={def.definition} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* Quick Revision Summary Card */}
+              {notesData.quick_revision_summary && notesData.quick_revision_summary.length > 0 && (
+                <div
+                  id="quick-revision-summary"
+                  className="bg-white rounded-2xl border-2 border-amber-300 shadow-md p-6 sm:p-8 space-y-4 bg-gradient-to-br from-amber-50/70 via-white to-amber-50/30 scroll-mt-20"
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <span className="text-2xl">⚡</span>
+                    <div>
+                      <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                        Quick Revision Summary
+                      </h3>
+                      <p className="text-xs text-amber-800 font-medium">
+                        High-yield core takeaways & rules for rapid last-minute cramming
+                      </p>
+                    </div>
+                  </div>
+
+                  <ul className="space-y-2.5 pt-2">
+                    {notesData.quick_revision_summary.map((sumItem, sumIdx) => (
+                      <li
+                        key={sumIdx}
+                        className="flex items-start space-x-3 p-3 rounded-xl bg-white/95 border border-amber-200/90 shadow-2xs text-sm text-slate-800"
+                      >
+                        <span className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">
+                          ✓
+                        </span>
+                        <div className="flex-1 leading-relaxed">
+                          <MathText content={sumItem} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Bottom Actions Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:text-indigo-600 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors bg-white hover:bg-indigo-50/50 cursor-pointer"
+                >
+                  &larr; Generate New Notes
+                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyNotesText}
+                    className="px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    {copyFeedback ? "✓ Copied" : "📋 Copy Text"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadNotesPdf}
+                    disabled={isExportingPdf}
+                    className="px-4 py-2 text-xs sm:text-sm font-semibold text-white rounded-xl bg-indigo-600 hover:bg-indigo-700 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    📥 Download PDF
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1445,9 +1878,15 @@ export default function StudyMateApp() {
                           })}
                         </span>
                         <span>&bull;</span>
-                        <span className="font-medium text-indigo-700">
-                          {item.data.flashcards.length} cards, {item.data.quiz.length} questions
-                        </span>
+                        {item.mode === "notes" && item.notesData ? (
+                          <span className="font-medium text-emerald-700">
+                            📖 {item.notesData.sections.length} sections, {item.notesData.all_key_definitions?.length || 0} terms
+                          </span>
+                        ) : (
+                          <span className="font-medium text-indigo-700">
+                            🗂️ {item.data?.flashcards.length || 0} cards, {item.data?.quiz.length || 0} questions
+                          </span>
+                        )}
                       </div>
                     </div>
 
